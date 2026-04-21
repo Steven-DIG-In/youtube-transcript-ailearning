@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.state import DEFAULT_STATE, load_state, save_state
+from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested
 
 
 def test_load_state_missing_file_returns_default(temp_state_path: Path):
@@ -38,3 +38,22 @@ def test_save_state_uses_atomic_rename(temp_state_path, tmp_path):
     leftover_tmp = [p for p in tmp_path.iterdir() if p.name.startswith("state.json.tmp")]
     assert leftover_tmp == []
     assert load_state(temp_state_path) == initial
+
+
+def test_is_ingested_false_when_absent():
+    state = {"ingested_video_ids": {}}
+    assert is_ingested(state, "abc12345678") is False
+
+
+def test_mark_ingested_then_is_ingested_true():
+    state = {"ingested_video_ids": {}}
+    mark_ingested(
+        state,
+        video_id="abc12345678",
+        source_page="wiki/sources/creator-foo--video-bar.md",
+        creator_slug="creator-foo",
+        ingested_at="2026-04-21T09:00:00Z",
+    )
+    assert is_ingested(state, "abc12345678") is True
+    assert state["ingested_video_ids"]["abc12345678"]["source_page"].endswith("video-bar.md")
+    assert state["ingested_video_ids"]["abc12345678"]["creator_slug"] == "creator-foo"

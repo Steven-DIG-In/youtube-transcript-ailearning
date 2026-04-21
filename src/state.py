@@ -40,3 +40,22 @@ def save_state(path: Path, data: dict[str, Any]) -> None:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
+
+
+def is_ingested(state: dict[str, Any], video_id: str) -> bool:
+    return video_id in state["ingested_video_ids"]
+
+
+def mark_ingested(
+    state: dict[str, Any],
+    *,
+    video_id: str,
+    source_page: str,
+    creator_slug: str,
+    ingested_at: str,
+) -> None:
+    state["ingested_video_ids"][video_id] = {
+        "ingested_at": ingested_at,
+        "source_page": source_page,
+        "creator_slug": creator_slug,
+    }
