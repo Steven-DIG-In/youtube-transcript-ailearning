@@ -138,3 +138,26 @@ def test_call_extract_raises_after_all_retries(mocker):
     with pytest.raises(ExtractionError):
         call_extract(client, prompt="p", model="claude-sonnet-4-7")
     assert client.messages.create.call_count == 3  # initial + 2 retries
+
+
+# ---------------------------------------------------------------------------
+# Task 18: split_prompt_for_caching + cache_control in call_extract
+# ---------------------------------------------------------------------------
+from src.extract import split_prompt_for_caching
+
+
+def test_split_prompt_separates_static_from_variable():
+    full = render_extract_prompt(
+        title="t", channel="c", channel_url="u",
+        published_at="2026-04-15", duration_seconds=10,
+        description="d", channel_hint_categories=[],
+        seed_categories=["optimising-ai"],
+        existing_creator_page="", resources_index_snapshot="",
+        transcript="xx",
+    )
+    static, variable = split_prompt_for_caching(full)
+    assert "## Rules" in static
+    assert "## Required JSON schema" in static
+    assert "## Inputs" not in static
+    assert "## Inputs" in variable
+    assert "xx" in variable  # transcript is in variable block
