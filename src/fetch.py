@@ -37,3 +37,15 @@ def extract_youtube_urls_from_text(text: str) -> list[str]:
         if extract_video_id(url) is not None:
             results.append(url)
     return results
+
+
+def self_update_ytdlp() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-U", "--quiet", "yt-dlp"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"yt-dlp self-update failed: {result.stderr.strip() or 'unknown'}"
+        )

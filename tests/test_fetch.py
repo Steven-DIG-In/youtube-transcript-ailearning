@@ -1,6 +1,6 @@
 import pytest
 
-from src.fetch import extract_video_id, extract_youtube_urls_from_text
+from src.fetch import extract_video_id, extract_youtube_urls_from_text, self_update_ytdlp
 
 
 @pytest.mark.parametrize("url,expected", [
@@ -39,3 +39,23 @@ def test_extract_urls_from_text_multiple_forms():
 
 def test_extract_urls_from_text_empty():
     assert extract_youtube_urls_from_text("no links here") == []
+
+
+def test_self_update_runs_pip_install(mocker):
+    mock_run = mocker.patch("src.fetch.subprocess.run")
+    mock_run.return_value.returncode = 0
+    self_update_ytdlp()
+    mock_run.assert_called_once()
+    args = mock_run.call_args.args[0]
+    assert "pip" in args
+    assert "install" in args
+    assert "-U" in args
+    assert "yt-dlp" in args
+
+
+def test_self_update_raises_on_failure(mocker):
+    mock_run = mocker.patch("src.fetch.subprocess.run")
+    mock_run.return_value.returncode = 1
+    mock_run.return_value.stderr = "network error"
+    with pytest.raises(RuntimeError, match="yt-dlp self-update failed"):
+        self_update_ytdlp()
