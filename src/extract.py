@@ -100,7 +100,7 @@ def split_prompt_for_caching(rendered: str) -> tuple[str, str]:
 
 MAX_JSON_RETRIES = 2
 MAX_OUTPUT_TOKENS = 8000
-DEFAULT_MODEL = "claude-sonnet-4-7"
+DEFAULT_MODEL = "claude-sonnet-4-6"
 _RETRY_NUDGE = (
     "That response was not valid JSON matching the required schema. "
     "Return ONLY the JSON object, no prose and no fences."

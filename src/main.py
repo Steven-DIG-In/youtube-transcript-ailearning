@@ -144,7 +144,7 @@ def process_one_video(
     channel_hint_categories: list[str],
     today: str,
     now_iso: str,
-    model: str = "claude-sonnet-4-7",
+    model: str = "claude-sonnet-4-6",
 ) -> ProcessedVideo:
     raw_dir = vault / "raw" / "youtube"
     fetch_result = fetch_video(url, raw_dir=raw_dir)
