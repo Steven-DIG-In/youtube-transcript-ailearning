@@ -29,3 +29,30 @@ def test_build_unified_queue_skips_dead_and_ingested():
         already_ingested={"aaaaaaaaaaa"},
     )
     assert candidates == []
+
+
+# ---------------------------------------------------------------------------
+# Task 33: drain_queue_txt
+# ---------------------------------------------------------------------------
+from pathlib import Path
+
+from src.main import drain_queue_txt
+
+
+def test_drain_queue_txt_returns_lines_and_truncates(tmp_path):
+    q = tmp_path / "queue.txt"
+    q.write_text(
+        "https://www.youtube.com/watch?v=aaaaaaaaaaa\n"
+        "https://youtu.be/bbbbbbbbbbb\n"
+        "\n"
+        "# comment line ignored\n"
+    )
+    urls = drain_queue_txt(q)
+    assert "https://www.youtube.com/watch?v=aaaaaaaaaaa" in urls
+    assert "https://youtu.be/bbbbbbbbbbb" in urls
+    assert q.read_text() == ""
+
+
+def test_drain_queue_txt_missing_file_returns_empty(tmp_path):
+    q = tmp_path / "queue.txt"
+    assert drain_queue_txt(q) == []

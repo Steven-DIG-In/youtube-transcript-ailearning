@@ -39,3 +39,21 @@ def build_unified_queue(
     for url in watchlist_urls:
         add(url, "watchlist")
     return out
+
+
+# ---------------------------------------------------------------------------
+# Task 33: drain_queue_txt
+# ---------------------------------------------------------------------------
+from pathlib import Path
+
+
+def drain_queue_txt(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    urls = [
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    path.write_text("")
+    return urls
