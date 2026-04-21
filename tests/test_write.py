@@ -300,3 +300,73 @@ def test_append_log_entry_appends_timestamped(temp_vault):
     text = (temp_vault / "log.md").read_text()
     assert "2026-04-21T09:00:00Z" in text
     assert "Ingested video abc12345678" in text
+
+
+# ---------------------------------------------------------------------------
+# Review-fix coverage
+# ---------------------------------------------------------------------------
+
+
+def test_resources_index_survives_em_dash_in_content(temp_vault):
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://example.com", "title": "Title — with em-dash",
+             "description": "desc also — with em-dash", "group": "Tools"},
+        ],
+        source_slug="creator-x--v1",
+        today="2026-04-21",
+    )
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://example.com", "title": "Title — with em-dash",
+             "description": "desc also — with em-dash", "group": "Tools"},
+        ],
+        source_slug="creator-x--v2",
+        today="2026-04-22",
+    )
+    text = (temp_vault / "wiki" / "sources" / "resources-index.md").read_text()
+    assert text.count("https://example.com") == 1
+    assert "[[creator-x--v1]]" in text
+    assert "[[creator-x--v2]]" in text
+    assert "Title — with em-dash" in text
+    assert "entry_count: 1" in text
+
+
+def test_resources_index_coerces_unknown_group_to_uncategorised(temp_vault):
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://example.com", "title": "Weird",
+             "description": "d", "group": "SomeUnknownGroup"},
+        ],
+        source_slug="creator-x--v1",
+        today="2026-04-21",
+    )
+    text = (temp_vault / "wiki" / "sources" / "resources-index.md").read_text()
+    assert "## Uncategorised" in text
+    assert "SomeUnknownGroup" not in text
+    assert "entry_count: 1" in text
+
+
+def test_upsert_creator_page_clears_placeholder_on_first_bio_addition(temp_vault):
+    first = _creator_inputs(vault=temp_vault)
+    upsert_creator_page(**first)
+    placeholder = "_First sighting — bio to be appended"
+    assert placeholder in (
+        temp_vault / "wiki" / "entities" / "creator-anthropic.md"
+    ).read_text()
+
+    second = _creator_inputs(
+        vault=temp_vault,
+        video_title="Second",
+        video_slug="second",
+        creator_bio_additions="Joined the DevRel team in April 2026.",
+        today="2026-04-22",
+    )
+    _, path = upsert_creator_page(**second)
+    text = path.read_text()
+    assert placeholder not in text
+    assert "Joined the DevRel team in April 2026." in text
+    assert "2026-04-22" in text

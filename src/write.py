@@ -76,6 +76,9 @@ def write_source_page(
     return path
 
 
+_CREATOR_BIO_PLACEHOLDER = "_First sighting — bio to be appended as more videos are ingested._"
+
+
 def upsert_creator_page(
     *,
     vault: Path,
@@ -114,7 +117,7 @@ def upsert_creator_page(
             "source_count": 1,
             "tags": ["creator"],
         }
-        bio = creator_bio_additions.strip() or "_First sighting — bio to be appended as more videos are ingested._"
+        bio = creator_bio_additions.strip() or _CREATOR_BIO_PLACEHOLDER
         themes = ", ".join(categories) or "_none yet_"
         content = (
             _yaml_frontmatter(fm)
@@ -134,10 +137,16 @@ def upsert_creator_page(
     body = existing[fm_end + 5:]
 
     if creator_bio_additions.strip():
-        addition = f"\n_Added {today}:_ {creator_bio_additions.strip()}\n"
+        addition = f"_Added {today}:_ {creator_bio_additions.strip()}\n"
         about_idx = body.index("## About\n") + len("## About\n")
         next_header = body.index("\n## ", about_idx)
-        body = body[:next_header] + addition + body[next_header:]
+        about_body = body[about_idx:next_header]
+        if _CREATOR_BIO_PLACEHOLDER in about_body:
+            about_body = about_body.replace(_CREATOR_BIO_PLACEHOLDER, "").strip()
+            about_body = (about_body + "\n\n" if about_body else "") + addition
+        else:
+            about_body = about_body.rstrip() + "\n\n" + addition
+        body = body[:about_idx] + about_body + body[next_header:]
 
     themes_header = "## Themes\n"
     themes_start = body.index(themes_header) + len(themes_header)
@@ -178,9 +187,7 @@ def _parse_resources_index(text: str) -> tuple[dict, dict[str, list[dict]]]:
             continue
         try:
             body_part = stripped[2:]
-            url_part, rest = body_part.split(" — ", 1)
-            title_part, rest = rest.split(" — ", 1)
-            desc_part, mention_part = rest.split(". Mentioned in:", 1)
+            url_part, title_part, desc_part, mention_part = body_part.split(" | ", 3)
             slugs = re.findall(r"\[\[([^\]]+)\]\]", mention_part)
             groups.setdefault(current, []).append({
                 "url": url_part.strip(),
@@ -203,7 +210,7 @@ def _render_resources_index(fm: dict, groups: dict[str, list[dict]]) -> str:
         for e in entries:
             mentions = ", ".join(f"[[{s}]]" for s in e["sources"])
             parts.append(
-                f"- {e['url']} — {e['title']} — {e['description']}. Mentioned in: {mentions}\n"
+                f"- {e['url']} | {e['title']} | {e['description']} | {mentions}\n"
             )
     return "".join(parts)
 
@@ -224,7 +231,7 @@ def upsert_resources_index(
     fm["updated"] = today
 
     for res in resources:
-        group = res["group"]
+        group = res["group"] if res["group"] in _RESOURCE_GROUPS_ORDERED else "Uncategorised"
         existing_entry = next(
             (e for e in groups.get(group, []) if e["url"] == res["url"]), None
         )
@@ -239,7 +246,9 @@ def upsert_resources_index(
                 "sources": [source_slug],
             })
 
-    fm["entry_count"] = sum(len(v) for v in groups.values())
+    fm["entry_count"] = sum(
+        len(groups.get(g) or []) for g in _RESOURCE_GROUPS_ORDERED
+    )
     path.write_text(_render_resources_index(fm, groups))
     return path
 
