@@ -124,3 +124,62 @@ def test_fetch_video_raises_when_no_captions(mocker, fixtures_dir, tmp_path):
 
     with pytest.raises(FetchError, match="no captions"):
         fetch_video(metadata["webpage_url"], raw_dir=tmp_path / "raw" / "youtube")
+
+
+# ---------------------------------------------------------------------------
+# Task 12: list_new_videos_for_channel
+# ---------------------------------------------------------------------------
+
+from src.fetch import list_new_videos_for_channel
+
+
+def test_list_new_videos_stops_at_last_seen(mocker):
+    feed = {
+        "entries": [
+            {"id": "v3", "upload_date": "20260421"},
+            {"id": "v2", "upload_date": "20260418"},
+            {"id": "v1", "upload_date": "20260410"},
+        ]
+    }
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            return feed
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    new = list_new_videos_for_channel(
+        "https://www.youtube.com/@Foo",
+        last_seen_video_id="v2",
+        lookback_days=30,
+        now="2026-04-21",
+    )
+    assert [v["id"] for v in new] == ["v3"]
+
+
+def test_list_new_videos_respects_lookback_when_no_last_seen(mocker):
+    feed = {
+        "entries": [
+            {"id": "v3", "upload_date": "20260421"},
+            {"id": "v2", "upload_date": "20260415"},
+            {"id": "v1", "upload_date": "20260301"},
+        ]
+    }
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            return feed
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    new = list_new_videos_for_channel(
+        "https://www.youtube.com/@Foo",
+        last_seen_video_id=None,
+        lookback_days=14,
+        now="2026-04-21",
+    )
+    assert [v["id"] for v in new] == ["v3", "v2"]
