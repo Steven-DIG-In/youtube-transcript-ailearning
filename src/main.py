@@ -255,12 +255,17 @@ def run_once(
     slack_channel_id: str,
     anthropic_api_key: str,
     slack_bot_token: str,
+    log_dir: Path | None = None,
     today: str | None = None,
     now_iso: str | None = None,
 ) -> None:
+    if not anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is empty; aborting before any processing.")
+
     now = datetime.now(timezone.utc)
     today = today or now.strftime("%Y-%m-%d")
     now_iso = now_iso or now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    log_dir = log_dir or (state_path.parent / "logs")
 
     cfg = load_config(config_path)
     state = load_state(state_path)
@@ -270,13 +275,26 @@ def run_once(
     try:
         self_update_ytdlp()
     except RuntimeError as exc:
+        # v1 deferral: spec §8.2 row 1 also prescribes a 🚨 Slack alert on
+        # persistent yt-dlp failure. For now we log and continue; the missing
+        # daily summary will surface the issue on the next successful run.
         logger.error("yt-dlp self-update failed: %s", exc)
 
-    bot_user_id = resolve_bot_user_id(slack_client, state)
+    # Slack bot ID resolution is tolerant of Slack outages — fall back to
+    # None so read_pending_urls simply skips the bot-filter step rather than
+    # aborting the whole run.
+    try:
+        bot_user_id: str | None = resolve_bot_user_id(slack_client, state)
+    except Exception as exc:  # SlackApiError or network
+        logger.warning("resolve_bot_user_id failed, continuing without it: %s", exc)
+        bot_user_id = None
 
     deliver_undelivered_summaries(
         client=slack_client, channel_id=slack_channel_id, state=state
     )
+
+    # Queue source ordering per spec §5.4: queue.txt → Slack → watchlist.
+    queue_urls = drain_queue_txt(queue_path)
 
     slack_items = read_pending_urls(
         client=slack_client,
@@ -284,8 +302,6 @@ def run_once(
         last_message_ts=state["slack_queue"]["last_message_ts"],
         bot_user_id=bot_user_id,
     )
-
-    queue_urls = drain_queue_txt(queue_path)
 
     watchlist_urls: list[str] = []
     hint_by_video_id: dict[str, list[str]] = {}
@@ -384,10 +400,15 @@ def run_once(
         slug for slug, entry in state["proposed_categories"].items()
         if entry["status"] == "pending"
     ]
-    autopromoted = [
+    # Per spec §9: auto-promote notice is a one-off. Surface only categories
+    # that flipped to auto-promoted during THIS run, then transition them to
+    # "announced" so subsequent runs stay quiet.
+    newly_autopromoted = [
         slug for slug, entry in state["proposed_categories"].items()
         if entry["status"] == "auto-promoted"
     ]
+    for slug in newly_autopromoted:
+        state["proposed_categories"][slug]["status"] = "announced"
 
     summary = RunSummary(
         run_date=now.strftime("%Y-%m-%d %H:%M"),
@@ -395,23 +416,25 @@ def run_once(
         storage_bytes=storage_bytes, storage_video_count=storage_count,
         storage_added_today=len(ingested),
         proposed_categories_pending=pending_categories,
-        autopromoted_categories=autopromoted,
+        autopromoted_categories=newly_autopromoted,
         dead_today=dead_today,
     )
     ok, _ = post_run_summary(
         client=slack_client, channel_id=slack_channel_id, summary=summary,
     )
     if not ok:
-        log_path = vault.parent / "logs" / f"{today}.json"
+        log_path = log_dir / f"{today}.json"
         _log_summary_for_retry(summary, log_path, state)
 
     save_state(state_path, state)
 
 
 def _autopromoted(state: dict) -> list[str]:
+    # Both "auto-promoted" (this run) and "announced" (past runs) are treated
+    # as accepted seed categories for extraction prompts.
     return [
         slug for slug, entry in state["proposed_categories"].items()
-        if entry["status"] == "auto-promoted"
+        if entry["status"] in ("auto-promoted", "announced")
     ]
 
 
