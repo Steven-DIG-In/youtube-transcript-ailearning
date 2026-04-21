@@ -1,4 +1,16 @@
-from src.notify import RunSummary, VideoResult, compose_top_level, compose_video_reply, compose_failure_reply
+from unittest.mock import MagicMock
+
+import pytest
+from slack_sdk.errors import SlackApiError
+
+from src.notify import (
+    RunSummary,
+    VideoResult,
+    compose_failure_reply,
+    compose_top_level,
+    compose_video_reply,
+    post_run_summary,
+)
 
 
 def test_compose_top_level_with_ingests_and_failures():
@@ -93,3 +105,43 @@ def test_compose_failure_reply_shows_retry_count():
         "moved_dead": False,
     })
     assert "retry 1 of 3" in text
+
+
+def test_post_run_summary_posts_top_level_then_threads():
+    client = MagicMock()
+    client.chat_postMessage.return_value = {"ts": "1745.5"}
+    summary = RunSummary(
+        run_date="2026-04-21 09:00",
+        ingested=[VideoResult(title="A", creator="c", categories=["x"],
+                              source_page="p", key_takeaways=["t"], resources_count=1)],
+        skipped=[], failed=[{"title": "F", "video_id": "v", "reason": "r",
+                             "attempt": 1, "moved_dead": False}],
+        storage_bytes=0, storage_video_count=0, storage_added_today=0,
+        proposed_categories_pending=[], autopromoted_categories=[], dead_today=[],
+    )
+    ok, delivery_log = post_run_summary(
+        client=client, channel_id="C1", summary=summary,
+    )
+    assert ok is True
+    assert client.chat_postMessage.call_count == 3
+    top_call = client.chat_postMessage.call_args_list[0]
+    assert top_call.kwargs["channel"] == "C1"
+    assert "📼" in top_call.kwargs["text"]
+    video_call = client.chat_postMessage.call_args_list[1]
+    assert video_call.kwargs["thread_ts"] == "1745.5"
+    failure_call = client.chat_postMessage.call_args_list[2]
+    assert failure_call.kwargs["thread_ts"] == "1745.5"
+
+
+def test_post_run_summary_returns_false_on_slack_error():
+    client = MagicMock()
+    client.chat_postMessage.side_effect = SlackApiError(
+        "err", response={"error": "channel_not_found"}
+    )
+    summary = RunSummary(run_date="2026-04-21", ingested=[], skipped=[], failed=[],
+                         storage_bytes=0, storage_video_count=0, storage_added_today=0,
+                         proposed_categories_pending=[], autopromoted_categories=[],
+                         dead_today=[])
+    ok, log = post_run_summary(client=client, channel_id="C1", summary=summary)
+    assert ok is False
+    assert "error" in log
