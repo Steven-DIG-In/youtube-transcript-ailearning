@@ -1,6 +1,6 @@
 import pytest
 
-from src.fetch import extract_video_id
+from src.fetch import extract_video_id, extract_youtube_urls_from_text
 
 
 @pytest.mark.parametrize("url,expected", [
@@ -18,3 +18,24 @@ def test_extract_video_id(url, expected):
 def test_extract_video_id_rejects_non_youtube():
     assert extract_video_id("https://vimeo.com/12345") is None
     assert extract_video_id("not a url") is None
+
+
+def test_extract_urls_from_text_single():
+    text = "Check this out: https://www.youtube.com/watch?v=dQw4w9WgXcQ — great video."
+    assert extract_youtube_urls_from_text(text) == ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"]
+
+
+def test_extract_urls_from_text_multiple_forms():
+    text = (
+        "1) https://youtu.be/aaaaaaaaaaa\n"
+        "2) also https://www.youtube.com/watch?v=bbbbbbbbbbb&t=42\n"
+        "3) vimeo https://vimeo.com/ignoreme"
+    )
+    urls = extract_youtube_urls_from_text(text)
+    assert len(urls) == 2
+    assert any("aaaaaaaaaaa" in u for u in urls)
+    assert any("bbbbbbbbbbb" in u for u in urls)
+
+
+def test_extract_urls_from_text_empty():
+    assert extract_youtube_urls_from_text("no links here") == []

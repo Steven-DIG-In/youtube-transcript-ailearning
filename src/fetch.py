@@ -28,3 +28,12 @@ def extract_video_id(url: str) -> str | None:
     if _VIDEO_ID_RE.match(candidate):
         return candidate
     return None
+
+
+def extract_youtube_urls_from_text(text: str) -> list[str]:
+    results: list[str] = []
+    for match in _URL_RE.finditer(text):
+        url = match.group(0).rstrip(".,;:!?)")
+        if extract_video_id(url) is not None:
+            results.append(url)
+    return results
