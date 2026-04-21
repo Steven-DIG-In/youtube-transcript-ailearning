@@ -1,6 +1,16 @@
 from pathlib import Path
 
-from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested, record_failure, DEAD_THRESHOLD, record_proposed_category, CATEGORY_AUTOPROMOTE_THRESHOLD
+from src.state import (
+    CATEGORY_AUTOPROMOTE_THRESHOLD,
+    DEAD_THRESHOLD,
+    DEFAULT_STATE,
+    is_ingested,
+    load_state,
+    mark_ingested,
+    record_failure,
+    record_proposed_category,
+    save_state,
+)
 
 
 def test_load_state_missing_file_returns_default(temp_state_path: Path):
@@ -112,3 +122,26 @@ def test_proposed_category_dedup_videos():
     record_proposed_category(state, slug="x", video_id="v1", now="2026-04-22T09:00:00Z")
     assert state["proposed_categories"]["x"]["videos"] == ["v1"]
     assert state["proposed_categories"]["x"]["sightings"] == 1
+
+
+def test_load_state_backfills_missing_keys(temp_state_path):
+    import json as _json
+    partial = {"ingested_video_ids": {"abc": {}}}
+    temp_state_path.write_text(_json.dumps(partial))
+    loaded = load_state(temp_state_path)
+    assert loaded["ingested_video_ids"] == {"abc": {}}
+    assert loaded["channels"] == {}
+    assert loaded["proposed_categories"] == {}
+    assert loaded["slack_queue"] == {"last_message_ts": None, "bot_user_id": None}
+    assert loaded["undelivered_summaries"] == []
+
+
+def test_record_failure_noop_when_already_dead():
+    state = {
+        "failed_videos": {},
+        "dead_videos": {"v1": {"reason": "original", "moved_dead_at": "2026-04-20T09:00:00Z"}},
+    }
+    record_failure(state, video_id="v1", reason="retry", now="2026-04-25T09:00:00Z")
+    assert "v1" not in state["failed_videos"]
+    assert state["dead_videos"]["v1"]["reason"] == "original"
+    assert state["dead_videos"]["v1"]["moved_dead_at"] == "2026-04-20T09:00:00Z"

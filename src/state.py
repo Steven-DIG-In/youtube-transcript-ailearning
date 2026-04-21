@@ -22,7 +22,10 @@ DEFAULT_STATE: dict[str, Any] = {
 def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return deepcopy(DEFAULT_STATE)
-    return json.loads(path.read_text())
+    on_disk = json.loads(path.read_text())
+    merged = deepcopy(DEFAULT_STATE)
+    merged.update(on_disk)
+    return merged
 
 
 def save_state(path: Path, data: dict[str, Any]) -> None:
@@ -71,6 +74,8 @@ def record_failure(
     reason: str,
     now: str,
 ) -> None:
+    if video_id in state["dead_videos"]:
+        return
     existing = state["failed_videos"].get(video_id, {"attempts": 0})
     attempts = existing["attempts"] + 1
     if attempts >= DEAD_THRESHOLD:
