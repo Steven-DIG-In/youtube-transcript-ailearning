@@ -1,11 +1,30 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from pathlib import Path
 
-from src.fetch import extract_video_id
+from anthropic import Anthropic
+
+from src.extract import call_extract, render_extract_prompt
+from src.fetch import extract_video_id, fetch_video
 from src.slack_queue import SlackQueueItem
+from src.state import mark_ingested, record_proposed_category
+from src.write import (
+    append_index_entries,
+    append_log_entry,
+    kebab_slug,
+    upsert_creator_page,
+    upsert_resources_index,
+    write_source_page,
+)
+
+logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Task 32: UrlCandidate + build_unified_queue
+# ---------------------------------------------------------------------------
 @dataclass
 class UrlCandidate:
     url: str
@@ -44,9 +63,6 @@ def build_unified_queue(
 # ---------------------------------------------------------------------------
 # Task 33: drain_queue_txt
 # ---------------------------------------------------------------------------
-from pathlib import Path
-
-
 def drain_queue_txt(path: Path) -> list[str]:
     if not path.exists():
         return []
@@ -70,28 +86,8 @@ def raw_storage_footprint(raw_dir: Path) -> tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Task 35: process_one_video
+# Task 35: ProcessedVideo + process_one_video
 # ---------------------------------------------------------------------------
-import logging
-from dataclasses import dataclass
-
-from anthropic import Anthropic
-
-from src.extract import call_extract, render_extract_prompt
-from src.fetch import fetch_video
-from src.state import mark_ingested, record_proposed_category
-from src.write import (
-    append_index_entries,
-    append_log_entry,
-    kebab_slug,
-    upsert_creator_page,
-    upsert_resources_index,
-    write_source_page,
-)
-
-logger = logging.getLogger(__name__)
-
-
 @dataclass
 class ProcessedVideo:
     video_id: str
