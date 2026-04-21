@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from urllib.request import urlopen
 
 import yt_dlp
 
@@ -111,6 +112,14 @@ def _vtt_to_plain_text(vtt: str) -> str:
     return "\n".join(lines)
 
 
+_SUBTITLE_FETCH_TIMEOUT_SECONDS = 30
+
+
+def _fetch_subtitle_url(url: str) -> str:
+    with urlopen(url, timeout=_SUBTITLE_FETCH_TIMEOUT_SECONDS) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
 def _load_transcript_for_video(info: dict) -> str | None:
     text = info.get("_transcript_text")
     if text:
@@ -122,8 +131,18 @@ def _load_transcript_for_video(info: dict) -> str | None:
         if not tracks:
             continue
         for track in tracks:
-            if track.get("ext") == "vtt" and track.get("data"):
-                return _vtt_to_plain_text(track["data"])
+            if track.get("ext") != "vtt":
+                continue
+            data = track.get("data")
+            if not data:
+                url = track.get("url")
+                if not url:
+                    continue
+                try:
+                    data = _fetch_subtitle_url(url)
+                except Exception:
+                    continue
+            return _vtt_to_plain_text(data)
     return None
 
 
@@ -135,6 +154,7 @@ def fetch_video(url: str, *, raw_dir: Path) -> FetchResult:
         "writeautomaticsub": True,
         "subtitleslangs": ["en", "en-US", "en-GB"],
         "subtitlesformat": "vtt",
+        "js_runtimes": {"node": {}},
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
