@@ -56,3 +56,25 @@ def test_drain_queue_txt_returns_lines_and_truncates(tmp_path):
 def test_drain_queue_txt_missing_file_returns_empty(tmp_path):
     q = tmp_path / "queue.txt"
     assert drain_queue_txt(q) == []
+
+
+# ---------------------------------------------------------------------------
+# Task 34: raw_storage_footprint
+# ---------------------------------------------------------------------------
+from src.main import raw_storage_footprint
+
+
+def test_raw_storage_footprint(tmp_path):
+    raw_dir = tmp_path / "raw" / "youtube"
+    raw_dir.mkdir(parents=True)
+    (raw_dir / "a.transcript.txt").write_text("a" * 1000)
+    (raw_dir / "b.transcript.txt").write_text("b" * 2000)
+    bytes_, count = raw_storage_footprint(raw_dir)
+    assert count == 2
+    assert bytes_ == 3000
+
+
+def test_raw_storage_footprint_missing_dir(tmp_path):
+    bytes_, count = raw_storage_footprint(tmp_path / "nonexistent")
+    assert bytes_ == 0
+    assert count == 0

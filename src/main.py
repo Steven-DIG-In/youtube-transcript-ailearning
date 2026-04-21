@@ -57,3 +57,13 @@ def drain_queue_txt(path: Path) -> list[str]:
     ]
     path.write_text("")
     return urls
+
+
+# ---------------------------------------------------------------------------
+# Task 34: raw_storage_footprint
+# ---------------------------------------------------------------------------
+def raw_storage_footprint(raw_dir: Path) -> tuple[int, int]:
+    if not raw_dir.exists():
+        return 0, 0
+    files = list(raw_dir.glob("*.transcript.txt"))
+    return sum(f.stat().st_size for f in files), len(files)
