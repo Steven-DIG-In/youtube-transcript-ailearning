@@ -1,4 +1,4 @@
-from src.notify import RunSummary, VideoResult, compose_top_level
+from src.notify import RunSummary, VideoResult, compose_top_level, compose_video_reply, compose_failure_reply
 
 
 def test_compose_top_level_with_ingests_and_failures():
@@ -48,3 +48,48 @@ def test_compose_top_level_heartbeat_on_zero_ingest():
     assert "📼" in text
     assert "0 new" in text
     assert "idle" in text.lower() or "nothing new" in text.lower()
+
+
+def test_compose_video_reply_contains_all_fields():
+    video = VideoResult(
+        title="Prompt Caching",
+        creator="Anthropic",
+        categories=["optimising-ai"],
+        source_page="wiki/sources/creator-anthropic--prompt-caching.md",
+        key_takeaways=["One", "Two", "Three"],
+        resources_count=5,
+    )
+    text = compose_video_reply(video)
+    assert "Prompt Caching" in text
+    assert "Anthropic" in text
+    assert "wiki/sources/creator-anthropic--prompt-caching.md" in text
+    assert "3 takeaways" in text
+    assert "5 resources" in text
+    assert "optimising-ai" in text
+    assert "One" in text and "Two" in text and "Three" in text
+
+
+def test_compose_failure_reply_marks_dead_flag():
+    text = compose_failure_reply({
+        "title": "Dead Video",
+        "video_id": "xyz",
+        "reason": "no captions",
+        "attempt": 3,
+        "moved_dead": True,
+    })
+    assert "❌" in text
+    assert "Dead Video" in text
+    assert "xyz" in text
+    assert "no captions" in text
+    assert "moved to dead" in text
+
+
+def test_compose_failure_reply_shows_retry_count():
+    text = compose_failure_reply({
+        "title": "Video",
+        "video_id": "abc",
+        "reason": "llm_error",
+        "attempt": 1,
+        "moved_dead": False,
+    })
+    assert "retry 1 of 3" in text
