@@ -94,23 +94,11 @@ MAX_OUTPUT_TOKENS = 8000
 def call_extract(client, *, prompt: str, model: str) -> dict:
     last_raw: str | None = None
     for attempt in range(MAX_JSON_RETRIES + 1):
-        static, variable = split_prompt_for_caching(prompt)
         if attempt == 0:
-            messages = [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": static,
-                     "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": variable},
-                ],
-            }]
+            messages = [{"role": "user", "content": prompt}]
         else:
             messages = [
-                {"role": "user", "content": [
-                    {"type": "text", "text": static,
-                     "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": variable},
-                ]},
+                {"role": "user", "content": prompt},
                 {"role": "assistant", "content": last_raw or ""},
                 {"role": "user", "content":
                     "That response was not valid JSON matching the required schema. "

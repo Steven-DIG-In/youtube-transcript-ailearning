@@ -97,3 +97,44 @@ def test_parse_extraction_response_raises_on_bad_resource_group():
            "resources": [{"url": "https://x", "title": "X", "description": "d", "group": "Unknown"}]}
     with pytest.raises(ExtractionError, match="resource group"):
         parse_extraction_response(json.dumps(bad))
+
+
+# ---------------------------------------------------------------------------
+# Task 17: call_extract with retry
+# ---------------------------------------------------------------------------
+from unittest.mock import MagicMock
+
+from src.extract import call_extract
+
+
+def _fake_message(text: str):
+    msg = MagicMock()
+    msg.content = [MagicMock(text=text)]
+    return msg
+
+
+def test_call_extract_succeeds_on_first_valid_response(mocker):
+    client = MagicMock()
+    client.messages.create.return_value = _fake_message(json.dumps(VALID_RESPONSE))
+    result = call_extract(client, prompt="p", model="claude-sonnet-4-7")
+    assert result == VALID_RESPONSE
+    assert client.messages.create.call_count == 1
+
+
+def test_call_extract_retries_invalid_json_up_to_twice(mocker):
+    client = MagicMock()
+    client.messages.create.side_effect = [
+        _fake_message("not json"),
+        _fake_message(json.dumps(VALID_RESPONSE)),
+    ]
+    result = call_extract(client, prompt="p", model="claude-sonnet-4-7")
+    assert result == VALID_RESPONSE
+    assert client.messages.create.call_count == 2
+
+
+def test_call_extract_raises_after_all_retries(mocker):
+    client = MagicMock()
+    client.messages.create.return_value = _fake_message("still not json")
+    with pytest.raises(ExtractionError):
+        call_extract(client, prompt="p", model="claude-sonnet-4-7")
+    assert client.messages.create.call_count == 3  # initial + 2 retries
