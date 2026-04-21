@@ -39,3 +39,61 @@ def test_render_extract_prompt_handles_empty_creator_page():
         resources_index_snapshot="", transcript="x",
     )
     assert "{{" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# Task 16: parse_extraction_response
+# ---------------------------------------------------------------------------
+import json
+
+from src.extract import ExtractionError, parse_extraction_response
+
+
+VALID_RESPONSE = {
+    "session_summary": "s",
+    "instructions_and_howto": "i",
+    "key_takeaways": ["t"],
+    "resources": [{"url": "https://x", "title": "X", "description": "d", "group": "Tools"}],
+    "categories": ["optimising-ai"],
+    "proposed_new_categories": [],
+    "tags": ["prompt-caching"],
+    "domain": "claude-code",
+    "creator_bio_additions": "",
+    "connections": [],
+}
+
+
+def test_parse_extraction_response_accepts_valid_json():
+    result = parse_extraction_response(json.dumps(VALID_RESPONSE))
+    assert result == VALID_RESPONSE
+
+
+def test_parse_extraction_response_strips_fencing():
+    fenced = "```json\n" + json.dumps(VALID_RESPONSE) + "\n```"
+    result = parse_extraction_response(fenced)
+    assert result == VALID_RESPONSE
+
+
+def test_parse_extraction_response_raises_on_invalid_json():
+    with pytest.raises(ExtractionError, match="not valid JSON"):
+        parse_extraction_response("this is not json")
+
+
+def test_parse_extraction_response_raises_on_missing_required_field():
+    broken = {**VALID_RESPONSE}
+    del broken["session_summary"]
+    with pytest.raises(ExtractionError, match="missing required field"):
+        parse_extraction_response(json.dumps(broken))
+
+
+def test_parse_extraction_response_raises_on_bad_domain():
+    bad = {**VALID_RESPONSE, "domain": "unknown-domain"}
+    with pytest.raises(ExtractionError, match="domain"):
+        parse_extraction_response(json.dumps(bad))
+
+
+def test_parse_extraction_response_raises_on_bad_resource_group():
+    bad = {**VALID_RESPONSE,
+           "resources": [{"url": "https://x", "title": "X", "description": "d", "group": "Unknown"}]}
+    with pytest.raises(ExtractionError, match="resource group"):
+        parse_extraction_response(json.dumps(bad))
