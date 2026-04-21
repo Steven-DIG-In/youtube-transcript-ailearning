@@ -85,3 +85,30 @@ def record_failure(
         "attempts": attempts,
         "last_tried": now,
     }
+
+
+CATEGORY_AUTOPROMOTE_THRESHOLD = 3
+
+
+def record_proposed_category(
+    state: dict[str, Any],
+    *,
+    slug: str,
+    video_id: str,
+    now: str,
+) -> None:
+    entry = state["proposed_categories"].get(slug)
+    if entry is None:
+        state["proposed_categories"][slug] = {
+            "first_seen": now,
+            "sightings": 1,
+            "videos": [video_id],
+            "status": "pending",
+        }
+        return
+    if video_id in entry["videos"]:
+        return
+    entry["videos"].append(video_id)
+    entry["sightings"] += 1
+    if entry["sightings"] >= CATEGORY_AUTOPROMOTE_THRESHOLD and entry["status"] == "pending":
+        entry["status"] = "auto-promoted"

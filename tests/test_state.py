@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested, record_failure, DEAD_THRESHOLD
+from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested, record_failure, DEAD_THRESHOLD, record_proposed_category, CATEGORY_AUTOPROMOTE_THRESHOLD
 
 
 def test_load_state_missing_file_returns_default(temp_state_path: Path):
@@ -76,3 +76,39 @@ def test_record_failure_moves_to_dead_after_threshold():
     assert "v1" not in state["failed_videos"]
     assert "v1" in state["dead_videos"]
     assert state["dead_videos"]["v1"]["reason"] == "no captions"
+
+
+def test_proposed_category_first_sighting_is_pending():
+    state = {"proposed_categories": {}}
+    record_proposed_category(
+        state,
+        slug="agent-orchestration",
+        video_id="v1",
+        now="2026-04-21T09:00:00Z",
+    )
+    entry = state["proposed_categories"]["agent-orchestration"]
+    assert entry["sightings"] == 1
+    assert entry["status"] == "pending"
+    assert entry["videos"] == ["v1"]
+    assert entry["first_seen"] == "2026-04-21T09:00:00Z"
+
+
+def test_proposed_category_autopromotes_at_threshold():
+    state = {"proposed_categories": {}}
+    for i in range(CATEGORY_AUTOPROMOTE_THRESHOLD):
+        record_proposed_category(
+            state,
+            slug="agent-orchestration",
+            video_id=f"v{i}",
+            now=f"2026-04-2{i+1}T09:00:00Z",
+        )
+    assert state["proposed_categories"]["agent-orchestration"]["status"] == "auto-promoted"
+    assert state["proposed_categories"]["agent-orchestration"]["sightings"] == CATEGORY_AUTOPROMOTE_THRESHOLD
+
+
+def test_proposed_category_dedup_videos():
+    state = {"proposed_categories": {}}
+    record_proposed_category(state, slug="x", video_id="v1", now="2026-04-21T09:00:00Z")
+    record_proposed_category(state, slug="x", video_id="v1", now="2026-04-22T09:00:00Z")
+    assert state["proposed_categories"]["x"]["videos"] == ["v1"]
+    assert state["proposed_categories"]["x"]["sightings"] == 1
