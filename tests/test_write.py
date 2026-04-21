@@ -244,3 +244,59 @@ def test_upsert_resources_index_appends_without_duplicating_url(temp_vault):
     assert "## Tools" in text
     assert "yt-dlp" in text
     assert "entry_count: 2" in text
+
+
+# ---------------------------------------------------------------------------
+# Task 23: append_index_entries, append_log_entry
+# ---------------------------------------------------------------------------
+from src.write import append_index_entries, append_log_entry
+
+
+def test_append_index_adds_source_and_creator_when_new(temp_vault):
+    append_index_entries(
+        vault=temp_vault,
+        source_slug="creator-x--video-y",
+        source_title="Video Y",
+        creator_slug="creator-x",
+        creator_name="Creator X",
+        creator_is_new=True,
+    )
+    text = (temp_vault / "index.md").read_text()
+    assert "[[creator-x--video-y]]" in text
+    assert "Video Y" in text
+    assert "[[creator-x]]" in text
+    assert "Creator X" in text
+
+
+def test_append_index_skips_creator_when_existing(temp_vault):
+    append_index_entries(
+        vault=temp_vault,
+        source_slug="creator-x--v1",
+        source_title="V1",
+        creator_slug="creator-x",
+        creator_name="Creator X",
+        creator_is_new=True,
+    )
+    append_index_entries(
+        vault=temp_vault,
+        source_slug="creator-x--v2",
+        source_title="V2",
+        creator_slug="creator-x",
+        creator_name="Creator X",
+        creator_is_new=False,
+    )
+    text = (temp_vault / "index.md").read_text()
+    assert text.count("[[creator-x]]") == 1
+    assert "[[creator-x--v1]]" in text
+    assert "[[creator-x--v2]]" in text
+
+
+def test_append_log_entry_appends_timestamped(temp_vault):
+    append_log_entry(
+        vault=temp_vault,
+        timestamp="2026-04-21T09:00:00Z",
+        message="Ingested video abc12345678 into creator-x--video-y",
+    )
+    text = (temp_vault / "log.md").read_text()
+    assert "2026-04-21T09:00:00Z" in text
+    assert "Ingested video abc12345678" in text

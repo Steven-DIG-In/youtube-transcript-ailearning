@@ -242,3 +242,55 @@ def upsert_resources_index(
     fm["entry_count"] = sum(len(v) for v in groups.values())
     path.write_text(_render_resources_index(fm, groups))
     return path
+
+
+# ---------------------------------------------------------------------------
+# Task 23: index.md and log.md appenders
+# ---------------------------------------------------------------------------
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=path.parent, text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def append_index_entries(
+    *,
+    vault: Path,
+    source_slug: str,
+    source_title: str,
+    creator_slug: str,
+    creator_name: str,
+    creator_is_new: bool,
+) -> None:
+    path = vault / "index.md"
+    text = path.read_text() if path.exists() else (
+        "# Index\n\n## Entities\n\n## Concepts\n\n## Sources\n\n## Analyses\n"
+    )
+
+    def append_under(section: str, line: str) -> str:
+        header = f"## {section}\n"
+        idx = text.index(header) + len(header)
+        next_section = text.find("\n## ", idx)
+        insert_at = next_section if next_section != -1 else len(text)
+        return text[:insert_at].rstrip() + "\n" + line + "\n" + text[insert_at:]
+
+    if creator_is_new:
+        text = append_under("Entities", f"- [[{creator_slug}]] — {creator_name}")
+    text = append_under("Sources", f"- [[{source_slug}]] — {source_title}")
+    _atomic_write(path, text)
+
+
+def append_log_entry(*, vault: Path, timestamp: str, message: str) -> None:
+    path = vault / "log.md"
+    existing = path.read_text() if path.exists() else "# Log\n"
+    line = f"- {timestamp} — {message}\n"
+    path.write_text(existing.rstrip() + "\n" + line)
