@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from src.fetch import extract_video_id, extract_youtube_urls_from_text, self_update_ytdlp
@@ -68,3 +71,56 @@ def test_self_update_raises_on_timeout(mocker):
     mock_run.side_effect = _subprocess.TimeoutExpired(cmd="pip", timeout=120)
     with pytest.raises(RuntimeError, match="timed out"):
         self_update_ytdlp()
+
+
+# ---------------------------------------------------------------------------
+# Task 11: fetch_video wrapper
+# ---------------------------------------------------------------------------
+
+from src.fetch import FetchResult, fetch_video, FetchError
+
+
+def test_fetch_video_returns_shaped_result_on_success(mocker, fixtures_dir, tmp_path):
+    metadata = json.loads((fixtures_dir / "sample-video.json").read_text())
+    transcript = (fixtures_dir / "sample-transcript.txt").read_text()
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            return {**metadata, "_transcript_text": transcript}
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    mocker.patch("src.fetch._load_transcript_for_video",
+                 return_value=transcript)
+
+    result = fetch_video("https://www.youtube.com/watch?v=" + metadata["id"],
+                        raw_dir=tmp_path / "raw" / "youtube")
+    assert isinstance(result, FetchResult)
+    assert result.video_id == metadata["id"]
+    assert result.title == metadata["title"]
+    assert result.duration_seconds == metadata["duration"]
+    # published_at converts YYYYMMDD → YYYY-MM-DD
+    yyyymmdd = metadata["upload_date"]
+    assert result.published_at == f"{yyyymmdd[0:4]}-{yyyymmdd[4:6]}-{yyyymmdd[6:8]}"
+    assert result.transcript == transcript
+    assert result.raw_transcript_path.exists()
+    assert result.raw_transcript_path.read_text() == transcript
+
+
+def test_fetch_video_raises_when_no_captions(mocker, fixtures_dir, tmp_path):
+    metadata = json.loads((fixtures_dir / "sample-video.json").read_text())
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            return metadata
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    mocker.patch("src.fetch._load_transcript_for_video", return_value=None)
+
+    with pytest.raises(FetchError, match="no captions"):
+        fetch_video(metadata["webpage_url"], raw_dir=tmp_path / "raw" / "youtube")

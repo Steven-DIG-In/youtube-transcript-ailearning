@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+import yt_dlp
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -60,3 +65,138 @@ def self_update_ytdlp() -> None:
         raise RuntimeError(
             f"yt-dlp self-update failed: {result.stderr.strip() or 'unknown'}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 11: fetch_video wrapper
+# ---------------------------------------------------------------------------
+
+
+class FetchError(Exception):
+    pass
+
+
+@dataclass
+class FetchResult:
+    video_id: str
+    title: str
+    description: str
+    channel: str
+    channel_url: str
+    channel_id: str
+    duration_seconds: int
+    published_at: str  # YYYY-MM-DD
+    webpage_url: str
+    transcript: str
+    raw_transcript_path: Path
+
+
+def _yyyymmdd_to_iso(value: str) -> str:
+    return f"{value[0:4]}-{value[4:6]}-{value[6:8]}"
+
+
+def _vtt_to_plain_text(vtt: str) -> str:
+    lines: list[str] = []
+    for line in vtt.splitlines():
+        stripped = line.strip()
+        if (not stripped
+                or stripped.startswith("WEBVTT")
+                or "-->" in stripped
+                or stripped.startswith("Kind:")
+                or stripped.startswith("Language:")):
+            continue
+        cleaned = re.sub(r"<[^>]+>", "", stripped)
+        if cleaned and (not lines or lines[-1] != cleaned):
+            lines.append(cleaned)
+    return "\n".join(lines)
+
+
+def _load_transcript_for_video(info: dict) -> str | None:
+    text = info.get("_transcript_text")
+    if text:
+        return text
+    subs = info.get("subtitles") or {}
+    auto = info.get("automatic_captions") or {}
+    for source in (subs, auto):
+        tracks = source.get("en") or source.get("en-US") or source.get("en-GB")
+        if not tracks:
+            continue
+        for track in tracks:
+            if track.get("ext") == "vtt" and track.get("data"):
+                return _vtt_to_plain_text(track["data"])
+    return None
+
+
+def fetch_video(url: str, *, raw_dir: Path) -> FetchResult:
+    opts = {
+        "quiet": True,
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitlesformat": "vtt",
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        raise FetchError(f"yt-dlp extract_info failed: {exc}") from exc
+
+    transcript = _load_transcript_for_video(info)
+    if not transcript:
+        raise FetchError(f"no captions available for {info.get('id')}")
+
+    video_id = info["id"]
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_dir / f"{video_id}.transcript.txt"
+    raw_path.write_text(transcript)
+
+    return FetchResult(
+        video_id=video_id,
+        title=info["title"],
+        description=info.get("description", ""),
+        channel=info.get("channel", ""),
+        channel_url=info.get("channel_url", ""),
+        channel_id=info.get("channel_id", ""),
+        duration_seconds=int(info.get("duration") or 0),
+        published_at=_yyyymmdd_to_iso(info["upload_date"]),
+        webpage_url=info.get("webpage_url", url),
+        transcript=transcript,
+        raw_transcript_path=raw_path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 12: list_new_videos_for_channel
+# ---------------------------------------------------------------------------
+
+
+def list_new_videos_for_channel(
+    channel_url: str,
+    *,
+    last_seen_video_id: str | None,
+    lookback_days: int,
+    now: str,  # YYYY-MM-DD
+) -> list[dict]:
+    opts = {
+        "quiet": True,
+        "extract_flat": "in_playlist",
+        "skip_download": True,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        feed = ydl.extract_info(channel_url, download=False)
+    entries = feed.get("entries") or []
+
+    cutoff = (datetime.strptime(now, "%Y-%m-%d")
+              - timedelta(days=lookback_days)).strftime("%Y%m%d")
+
+    results: list[dict] = []
+    for entry in entries:
+        vid = entry.get("id")
+        upload = entry.get("upload_date") or "00000000"
+        if last_seen_video_id and vid == last_seen_video_id:
+            break
+        if not last_seen_video_id and upload < cutoff:
+            break
+        results.append(entry)
+    return results
