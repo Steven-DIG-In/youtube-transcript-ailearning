@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from src.fetch import extract_video_id
+from src.slack_queue import SlackQueueItem
+
+
+@dataclass
+class UrlCandidate:
+    url: str
+    video_id: str
+    source: str  # "queue.txt" | "slack" | "watchlist"
+    slack_item: SlackQueueItem | None = None
+
+
+def build_unified_queue(
+    *,
+    queue_txt_urls: list[str],
+    slack_items: list[SlackQueueItem],
+    watchlist_urls: list[str],
+    already_ingested: set[str],
+) -> list[UrlCandidate]:
+    seen: set[str] = set()
+    out: list[UrlCandidate] = []
+
+    def add(url: str, source: str, slack_item: SlackQueueItem | None = None) -> None:
+        vid = extract_video_id(url)
+        if not vid or vid in seen or vid in already_ingested:
+            return
+        seen.add(vid)
+        out.append(UrlCandidate(url=url, video_id=vid, source=source,
+                                slack_item=slack_item))
+
+    for url in queue_txt_urls:
+        add(url, "queue.txt")
+    for item in slack_items:
+        add(item.url, "slack", slack_item=item)
+    for url in watchlist_urls:
+        add(url, "watchlist")
+    return out
