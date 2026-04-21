@@ -1,12 +1,15 @@
-watchlist: []
+watchlist:
+  - https://www.youtube.com/@Itssssss_Jack
 
 seed_categories:
   - building-websites
   - optimising-ai
   - tool-combinations
   - future-trends
+  - agent-engineering
+  - multi-agent-systems
 
 ingest:
-  max_videos_per_run: 10
+  max_videos_per_run: 2
   lookback_days: 14
   min_duration_seconds: 60
