@@ -47,6 +47,8 @@ def read_pending_urls(
                     channel=channel_id, ts=msg["thread_ts"]
                 )
                 for reply in replies.get("messages", []):
+                    # Slack returns the thread parent as the first reply;
+                    # skip it so we don't double-process its URLs.
                     if reply.get("ts") == msg["thread_ts"]:
                         continue
                     if reply.get("user") == bot_user_id:

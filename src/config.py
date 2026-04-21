@@ -31,6 +31,18 @@ class Config:
     ingest: IngestConfig
 
 
+def _int_field(data: dict, *keys: str) -> int:
+    obj: object = data
+    for k in keys:
+        obj = obj[k]
+    try:
+        return int(obj)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            f"config.yml field {'.'.join(keys)!r} must be an integer, got {obj!r}"
+        ) from exc
+
+
 def load_config(path: Path) -> Config:
     data = yaml.safe_load(path.read_text())
     if not isinstance(data, dict):
@@ -38,7 +50,10 @@ def load_config(path: Path) -> Config:
     for key in ("watchlist", "seed_categories", "ingest"):
         if key not in data:
             raise ConfigError(f"config.yml missing key: {key}")
+
     watchlist_raw = data["watchlist"] or []
+    if not isinstance(watchlist_raw, list):
+        raise ConfigError("config.yml 'watchlist' must be a list")
     watchlist = [
         WatchlistChannel(
             url=item["url"],
@@ -47,13 +62,26 @@ def load_config(path: Path) -> Config:
         )
         for item in watchlist_raw
     ]
+
+    if not isinstance(data["seed_categories"], list):
+        raise ConfigError("config.yml 'seed_categories' must be a list")
+    seed_categories = list(data["seed_categories"])
+    duplicates = sorted({c for c in seed_categories if seed_categories.count(c) > 1})
+    if duplicates:
+        raise ConfigError(
+            f"config.yml 'seed_categories' contains duplicates: {duplicates}"
+        )
+
+    ingest_raw = data["ingest"]
+    if not isinstance(ingest_raw, dict):
+        raise ConfigError("config.yml 'ingest' must be a mapping")
     ingest = IngestConfig(
-        max_videos_per_run=int(data["ingest"]["max_videos_per_run"]),
-        lookback_days=int(data["ingest"]["lookback_days"]),
-        min_duration_seconds=int(data["ingest"]["min_duration_seconds"]),
+        max_videos_per_run=_int_field(data, "ingest", "max_videos_per_run"),
+        lookback_days=_int_field(data, "ingest", "lookback_days"),
+        min_duration_seconds=_int_field(data, "ingest", "min_duration_seconds"),
     )
     return Config(
         watchlist=watchlist,
-        seed_categories=list(data["seed_categories"]),
+        seed_categories=seed_categories,
         ingest=ingest,
     )
