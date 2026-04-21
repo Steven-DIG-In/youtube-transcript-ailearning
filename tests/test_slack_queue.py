@@ -80,3 +80,31 @@ def test_read_pending_urls_descends_into_threads(mocker):
         last_message_ts=None, bot_user_id="U_BOT",
     )
     assert any("bbbbbbbbbbb" in i.url for i in items)
+
+
+from src.slack_queue import mark_processed
+
+
+def test_mark_processed_adds_reaction():
+    client = MagicMock()
+    mark_processed(client=client, channel_id="C1", message_ts="1745.3")
+    client.reactions_add.assert_called_once_with(
+        channel="C1", timestamp="1745.3", name="vhs"
+    )
+
+
+def test_mark_processed_swallows_already_reacted(mocker):
+    client = MagicMock()
+    client.reactions_add.side_effect = SlackApiError(
+        "x", response={"error": "already_reacted"}
+    )
+    mark_processed(client=client, channel_id="C1", message_ts="1745.3")
+
+
+def test_mark_processed_reraises_on_other_errors():
+    client = MagicMock()
+    client.reactions_add.side_effect = SlackApiError(
+        "x", response={"error": "channel_not_found"}
+    )
+    with pytest.raises(SlackApiError):
+        mark_processed(client=client, channel_id="C1", message_ts="1745.3")

@@ -60,3 +60,12 @@ def read_pending_urls(
 def _collect_urls(msg: dict, channel_id: str, out: list[SlackQueueItem]) -> None:
     for url in extract_youtube_urls_from_text(msg.get("text", "") or ""):
         out.append(SlackQueueItem(url=url, message_ts=msg["ts"], channel_id=channel_id))
+
+
+def mark_processed(*, client: WebClient, channel_id: str, message_ts: str) -> None:
+    try:
+        client.reactions_add(channel=channel_id, timestamp=message_ts, name="vhs")
+    except SlackApiError as exc:
+        if exc.response.get("error") == "already_reacted":
+            return
+        raise
