@@ -1,0 +1,10 @@
+.env
+state.json
+queue.txt
+logs/*
+!logs/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/fixtures/_scratch/
+.venv/

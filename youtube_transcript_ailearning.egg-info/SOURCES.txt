@@ -1,0 +1,7 @@
+pyproject.toml
+src/__init__.py
+youtube_transcript_ailearning.egg-info/PKG-INFO
+youtube_transcript_ailearning.egg-info/SOURCES.txt
+youtube_transcript_ailearning.egg-info/dependency_links.txt
+youtube_transcript_ailearning.egg-info/requires.txt
+youtube_transcript_ailearning.egg-info/top_level.txt

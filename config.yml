@@ -1,0 +1,12 @@
+watchlist: []
+
+seed_categories:
+  - building-websites
+  - optimising-ai
+  - tool-combinations
+  - future-trends
+
+ingest:
+  max_videos_per_run: 10
+  lookback_days: 14
+  min_duration_seconds: 60
