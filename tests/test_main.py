@@ -78,3 +78,73 @@ def test_raw_storage_footprint_missing_dir(tmp_path):
     bytes_, count = raw_storage_footprint(tmp_path / "nonexistent")
     assert bytes_ == 0
     assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 35: process_one_video
+# ---------------------------------------------------------------------------
+import json
+from unittest.mock import MagicMock
+
+from src.fetch import FetchResult
+
+
+def _fetch_fixture(fixtures_dir: Path, raw_dir: Path) -> FetchResult:
+    meta = json.loads((fixtures_dir / "sample-video.json").read_text())
+    transcript = (fixtures_dir / "sample-transcript.txt").read_text()
+    raw_path = raw_dir / f"{meta['id']}.transcript.txt"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(transcript)
+    return FetchResult(
+        video_id=meta["id"], title=meta["title"], description=meta["description"],
+        channel=meta["channel"], channel_url=meta["channel_url"],
+        channel_id=meta["channel_id"], duration_seconds=meta["duration"],
+        published_at="2026-04-15", webpage_url=meta["webpage_url"],
+        transcript=transcript, raw_transcript_path=raw_path,
+    )
+
+
+def test_process_one_video_writes_all_artifacts(mocker, temp_vault, fixtures_dir):
+    from src.main import process_one_video
+    fetch_result = _fetch_fixture(fixtures_dir, temp_vault / "raw" / "youtube")
+    extraction = {
+        "session_summary": "About prompt caching.",
+        "instructions_and_howto": "1. Do this.\n2. Do that.",
+        "key_takeaways": ["Cache writes cost more than reads"],
+        "resources": [{"url": "https://docs.anthropic.com/caching",
+                       "title": "Caching docs", "description": "official",
+                       "group": "Documentation"}],
+        "categories": ["optimising-ai"],
+        "proposed_new_categories": [],
+        "tags": ["prompt-caching"],
+        "domain": "claude-code",
+        "creator_bio_additions": "",
+        "connections": [],
+    }
+    mocker.patch("src.main.fetch_video", return_value=fetch_result)
+    mocker.patch("src.main.call_extract", return_value=extraction)
+    state = {"ingested_video_ids": {}, "channels": {}, "failed_videos": {},
+             "dead_videos": {}, "proposed_categories": {},
+             "slack_queue": {"last_message_ts": None, "bot_user_id": None},
+             "undelivered_summaries": []}
+
+    result = process_one_video(
+        url=fetch_result.webpage_url,
+        client=MagicMock(),
+        vault=temp_vault,
+        state=state,
+        seed_categories=["optimising-ai"],
+        channel_hint_categories=[],
+        today="2026-04-21",
+        now_iso="2026-04-21T09:00:00Z",
+        model="claude-sonnet-4-7",
+    )
+
+    assert result.video_id == fetch_result.video_id
+    source_path = temp_vault / "wiki" / "sources" / result.source_page
+    assert source_path.exists()
+    creator_path = temp_vault / "wiki" / "entities" / f"{result.creator_slug}.md"
+    assert creator_path.exists()
+    resources_path = temp_vault / "wiki" / "sources" / "resources-index.md"
+    assert resources_path.exists()
+    assert fetch_result.video_id in state["ingested_video_ids"]
