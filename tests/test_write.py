@@ -114,3 +114,77 @@ def test_write_source_page_sections_present(temp_vault):
     assert "## Connections" in text
     assert "[Anthropic Docs](https://docs.anthropic.com)" in text
     assert "[[concept-prompt-caching]]" in text
+
+
+# ---------------------------------------------------------------------------
+# Task 21: upsert_creator_page
+# ---------------------------------------------------------------------------
+from src.write import upsert_creator_page
+
+
+def _creator_inputs(**overrides):
+    base = {
+        "vault": None,
+        "channel": "Anthropic",
+        "channel_url": "https://www.youtube.com/@AnthropicAI",
+        "channel_id": "UCx",
+        "video_title": "How Prompt Caching Works",
+        "video_slug": "how-prompt-caching-works",
+        "video_summary": "About prompt caching.",
+        "video_published_at": "2026-04-15",
+        "video_domain": "claude-code",
+        "categories": ["optimising-ai"],
+        "creator_bio_additions": "",
+        "today": "2026-04-21",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_upsert_creator_page_creates_new(temp_vault):
+    inputs = _creator_inputs(vault=temp_vault)
+    slug, path = upsert_creator_page(**inputs)
+    assert slug == "creator-anthropic"
+    assert path == temp_vault / "wiki" / "entities" / "creator-anthropic.md"
+    assert path.exists()
+    text = path.read_text()
+    assert "entity_type: creator" in text
+    assert "source_count: 1" in text
+    assert "## About" in text
+    assert "## Themes" in text
+    assert "## Sources" in text
+    assert "[[creator-anthropic--how-prompt-caching-works]]" in text
+
+
+def test_upsert_creator_page_appends_new_source(temp_vault):
+    first = _creator_inputs(vault=temp_vault)
+    upsert_creator_page(**first)
+    second = _creator_inputs(
+        vault=temp_vault,
+        video_title="Another Video",
+        video_slug="another-video",
+        video_summary="Other stuff.",
+        video_published_at="2026-04-20",
+        today="2026-04-21",
+    )
+    slug, path = upsert_creator_page(**second)
+    text = path.read_text()
+    assert "source_count: 2" in text
+    assert "[[creator-anthropic--how-prompt-caching-works]]" in text
+    assert "[[creator-anthropic--another-video]]" in text
+
+
+def test_upsert_creator_page_appends_bio_additions_with_date(temp_vault):
+    first = _creator_inputs(vault=temp_vault)
+    upsert_creator_page(**first)
+    second = _creator_inputs(
+        vault=temp_vault,
+        video_title="Second Video",
+        video_slug="second-video",
+        creator_bio_additions="Joined the DevRel team in April 2026.",
+        today="2026-04-21",
+    )
+    _, path = upsert_creator_page(**second)
+    text = path.read_text()
+    assert "Joined the DevRel team in April 2026." in text
+    assert "2026-04-21" in text
