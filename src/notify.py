@@ -121,31 +121,62 @@ def post_run_summary(
     channel_id: str,
     summary: RunSummary,
 ) -> tuple[bool, dict]:
+    parent_ts: str | None = None
     try:
         top = client.chat_postMessage(
             channel=channel_id, text=compose_top_level(summary)
         )
         parent_ts = top["ts"]
-        for v in summary.ingested:
+    except SlackApiError as exc:
+        logger.warning("slack top-level post failed: %s", exc)
+        return False, {"error": str(exc)}
+
+    # Top-level succeeded; threaded replies are best-effort. A failure here
+    # should not trigger a catch-up retry of the whole summary (which would
+    # duplicate the top-level message), so we surface partial success to the
+    # caller via the result tuple.
+    thread_errors: list[str] = []
+    for v in summary.ingested:
+        try:
             client.chat_postMessage(
                 channel=channel_id, thread_ts=parent_ts,
                 text=compose_video_reply(v),
             )
-        for f in summary.failed:
+        except SlackApiError as exc:
+            logger.warning("slack thread reply failed for %s: %s", v.title, exc)
+            thread_errors.append(str(exc))
+    for f in summary.failed:
+        try:
             client.chat_postMessage(
                 channel=channel_id, thread_ts=parent_ts,
                 text=compose_failure_reply(f),
             )
-        return True, {"top_ts": parent_ts}
-    except SlackApiError as exc:
-        logger.warning("slack post failed: %s", exc)
-        return False, {"error": str(exc)}
+        except SlackApiError as exc:
+            logger.warning("slack failure reply failed for %s: %s", f.get("video_id"), exc)
+            thread_errors.append(str(exc))
+
+    result: dict = {"top_ts": parent_ts}
+    if thread_errors:
+        result["thread_errors"] = thread_errors
+    return True, result
+
+
+def _safe_video_result(v: dict) -> VideoResult | None:
+    try:
+        return VideoResult(**v)
+    except TypeError as exc:
+        logger.warning("skipping undelivered video with incompatible schema: %s", exc)
+        return None
 
 
 def _summary_from_log(log: dict) -> RunSummary:
+    ingested = [
+        vr for vr in (_safe_video_result(v) for v in log.get("ingested", []))
+        if vr is not None
+    ]
     return RunSummary(
         run_date=log["run_date"],
-        ingested=[VideoResult(**v) for v in log.get("ingested", [])],
+        ingested=ingested,
         skipped=log.get("skipped", []),
         failed=log.get("failed", []),
         storage_bytes=log.get("storage_bytes", 0),
@@ -168,8 +199,12 @@ def deliver_undelivered_summaries(
     for entry in pending:
         try:
             data = json.loads(Path(entry["log_path"]).read_text())
-        except (FileNotFoundError, json.JSONDecodeError) as exc:
-            logger.warning("cannot read undelivered log %s: %s", entry, exc)
+        except FileNotFoundError as exc:
+            logger.warning("undelivered log %s missing, retaining for retry: %s", entry, exc)
+            remaining.append(entry)
+            continue
+        except json.JSONDecodeError as exc:
+            logger.warning("undelivered log %s corrupt, dropping: %s", entry, exc)
             continue
         summary = _summary_from_log(data)
         prefixed = RunSummary(

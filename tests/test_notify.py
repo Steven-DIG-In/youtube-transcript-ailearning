@@ -189,3 +189,58 @@ def test_deliver_undelivered_retains_on_failure(tmp_path):
     )
     deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
     assert len(state["undelivered_summaries"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Review-fix coverage
+# ---------------------------------------------------------------------------
+
+
+def test_post_run_summary_returns_success_when_only_thread_fails():
+    client = MagicMock()
+    responses: list = [
+        {"ts": "1745.5"},  # top-level succeeds
+        SlackApiError("thread failed", response={"error": "msg_too_long"}),  # video reply fails
+    ]
+
+    def side_effect(**kwargs):
+        r = responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    client.chat_postMessage.side_effect = side_effect
+
+    summary = RunSummary(
+        run_date="2026-04-21 09:00",
+        ingested=[VideoResult(title="A", creator="c", categories=["x"],
+                              source_page="p", key_takeaways=["t"], resources_count=1)],
+        skipped=[], failed=[],
+        storage_bytes=0, storage_video_count=0, storage_added_today=0,
+        proposed_categories_pending=[], autopromoted_categories=[], dead_today=[],
+    )
+    ok, result = post_run_summary(client=client, channel_id="C1", summary=summary)
+    assert ok is True  # top-level succeeded; we don't want catch-up to duplicate it
+    assert result["top_ts"] == "1745.5"
+    assert "thread_errors" in result
+    assert len(result["thread_errors"]) == 1
+
+
+def test_deliver_undelivered_retains_entry_when_log_missing(tmp_path):
+    state = {"undelivered_summaries": [
+        {"run_date": "2026-04-20 09:00", "log_path": str(tmp_path / "gone.json")}
+    ]}
+    client = MagicMock()
+    deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
+    assert len(state["undelivered_summaries"]) == 1  # retained, not dropped
+
+
+def test_deliver_undelivered_drops_entry_when_log_corrupt(tmp_path):
+    log_path = tmp_path / "corrupt.json"
+    log_path.write_text("{not valid json")
+    state = {"undelivered_summaries": [
+        {"run_date": "2026-04-20 09:00", "log_path": str(log_path)}
+    ]}
+    client = MagicMock()
+    deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
+    assert state["undelivered_summaries"] == []  # corrupt log is unrecoverable
