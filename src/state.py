@@ -59,3 +59,29 @@ def mark_ingested(
         "source_page": source_page,
         "creator_slug": creator_slug,
     }
+
+
+DEAD_THRESHOLD = 3
+
+
+def record_failure(
+    state: dict[str, Any],
+    *,
+    video_id: str,
+    reason: str,
+    now: str,
+) -> None:
+    existing = state["failed_videos"].get(video_id, {"attempts": 0})
+    attempts = existing["attempts"] + 1
+    if attempts >= DEAD_THRESHOLD:
+        state["dead_videos"][video_id] = {
+            "reason": reason,
+            "moved_dead_at": now,
+        }
+        state["failed_videos"].pop(video_id, None)
+        return
+    state["failed_videos"][video_id] = {
+        "reason": reason,
+        "attempts": attempts,
+        "last_tried": now,
+    }

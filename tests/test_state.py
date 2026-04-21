@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested
+from src.state import DEFAULT_STATE, load_state, save_state, is_ingested, mark_ingested, record_failure, DEAD_THRESHOLD
 
 
 def test_load_state_missing_file_returns_default(temp_state_path: Path):
@@ -57,3 +57,22 @@ def test_mark_ingested_then_is_ingested_true():
     assert is_ingested(state, "abc12345678") is True
     assert state["ingested_video_ids"]["abc12345678"]["source_page"].endswith("video-bar.md")
     assert state["ingested_video_ids"]["abc12345678"]["creator_slug"] == "creator-foo"
+
+
+def test_record_failure_increments_attempts():
+    state = {"failed_videos": {}, "dead_videos": {}}
+    record_failure(state, video_id="v1", reason="no captions", now="2026-04-21T09:00:00Z")
+    record_failure(state, video_id="v1", reason="no captions", now="2026-04-22T09:00:00Z")
+    assert state["failed_videos"]["v1"]["attempts"] == 2
+    assert state["failed_videos"]["v1"]["reason"] == "no captions"
+    assert state["failed_videos"]["v1"]["last_tried"] == "2026-04-22T09:00:00Z"
+    assert "v1" not in state["dead_videos"]
+
+
+def test_record_failure_moves_to_dead_after_threshold():
+    state = {"failed_videos": {}, "dead_videos": {}}
+    for i in range(DEAD_THRESHOLD):
+        record_failure(state, video_id="v1", reason="no captions", now=f"2026-04-2{i+1}T09:00:00Z")
+    assert "v1" not in state["failed_videos"]
+    assert "v1" in state["dead_videos"]
+    assert state["dead_videos"]["v1"]["reason"] == "no captions"
