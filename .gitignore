@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache/
 tests/fixtures/_scratch/
 .venv/
+*.egg-info/

@@ -2,7 +2,7 @@
 name = "youtube-transcript-ailearning"
 version = "0.1.0"
 description = "Ingest YouTube transcripts into the AI Learnings wiki vault"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "yt-dlp>=2024.8.6",
     "anthropic>=0.39.0",
