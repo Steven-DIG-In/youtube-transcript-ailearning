@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +11,7 @@ from src.notify import (
     compose_failure_reply,
     compose_top_level,
     compose_video_reply,
+    deliver_undelivered_summaries,
     post_run_summary,
 )
 
@@ -145,3 +148,44 @@ def test_post_run_summary_returns_false_on_slack_error():
     ok, log = post_run_summary(client=client, channel_id="C1", summary=summary)
     assert ok is False
     assert "error" in log
+
+
+def test_deliver_undelivered_drains_state_on_success(tmp_path):
+    log_path = tmp_path / "missed.json"
+    log_path.write_text(json.dumps({
+        "run_date": "2026-04-20 09:00",
+        "ingested": [], "skipped": [], "failed": [],
+        "storage_bytes": 0, "storage_video_count": 0, "storage_added_today": 0,
+        "proposed_categories_pending": [], "autopromoted_categories": [],
+        "dead_today": [],
+    }))
+    state = {"undelivered_summaries": [
+        {"run_date": "2026-04-20 09:00", "log_path": str(log_path)}
+    ]}
+    client = MagicMock()
+    client.chat_postMessage.return_value = {"ts": "1745.5"}
+
+    deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
+    assert state["undelivered_summaries"] == []
+    first_text = client.chat_postMessage.call_args_list[0].kwargs["text"]
+    assert "delayed from" in first_text
+
+
+def test_deliver_undelivered_retains_on_failure(tmp_path):
+    log_path = tmp_path / "missed.json"
+    log_path.write_text(json.dumps({
+        "run_date": "2026-04-20 09:00",
+        "ingested": [], "skipped": [], "failed": [],
+        "storage_bytes": 0, "storage_video_count": 0, "storage_added_today": 0,
+        "proposed_categories_pending": [], "autopromoted_categories": [],
+        "dead_today": [],
+    }))
+    state = {"undelivered_summaries": [
+        {"run_date": "2026-04-20 09:00", "log_path": str(log_path)}
+    ]}
+    client = MagicMock()
+    client.chat_postMessage.side_effect = SlackApiError(
+        "x", response={"error": "channel_not_found"}
+    )
+    deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
+    assert len(state["undelivered_summaries"]) == 1
