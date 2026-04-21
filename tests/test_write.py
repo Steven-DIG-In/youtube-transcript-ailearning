@@ -188,3 +188,59 @@ def test_upsert_creator_page_appends_bio_additions_with_date(temp_vault):
     text = path.read_text()
     assert "Joined the DevRel team in April 2026." in text
     assert "2026-04-21" in text
+
+
+# ---------------------------------------------------------------------------
+# Task 22: upsert_resources_index
+# ---------------------------------------------------------------------------
+from src.write import upsert_resources_index
+
+
+def test_upsert_resources_index_creates_file(temp_vault):
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://docs.anthropic.com", "title": "Docs",
+             "description": "official", "group": "Documentation"},
+        ],
+        source_slug="creator-x--video-y",
+        today="2026-04-21",
+    )
+    path = temp_vault / "wiki" / "sources" / "resources-index.md"
+    assert path.exists()
+    text = path.read_text()
+    assert "type: index" in text
+    assert "entry_count: 1" in text
+    assert "## Documentation" in text
+    assert "https://docs.anthropic.com" in text
+    assert "[[creator-x--video-y]]" in text
+
+
+def test_upsert_resources_index_appends_without_duplicating_url(temp_vault):
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://docs.anthropic.com", "title": "Docs",
+             "description": "official", "group": "Documentation"},
+        ],
+        source_slug="creator-x--first",
+        today="2026-04-21",
+    )
+    upsert_resources_index(
+        vault=temp_vault,
+        resources=[
+            {"url": "https://docs.anthropic.com", "title": "Docs",
+             "description": "official", "group": "Documentation"},
+            {"url": "https://github.com/yt-dlp/yt-dlp", "title": "yt-dlp",
+             "description": "cli", "group": "Tools"},
+        ],
+        source_slug="creator-x--second",
+        today="2026-04-22",
+    )
+    path = temp_vault / "wiki" / "sources" / "resources-index.md"
+    text = path.read_text()
+    assert text.count("https://docs.anthropic.com") == 1
+    assert "[[creator-x--second]]" in text
+    assert "## Tools" in text
+    assert "yt-dlp" in text
+    assert "entry_count: 2" in text

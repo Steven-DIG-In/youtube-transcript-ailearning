@@ -151,3 +151,94 @@ def upsert_creator_page(
     body = body.rstrip() + "\n" + source_line + "\n"
     path.write_text(_yaml_frontmatter(fm) + body)
     return creator_slug, path
+
+
+# ---------------------------------------------------------------------------
+# Task 22: resources-index upsert
+# ---------------------------------------------------------------------------
+_RESOURCE_GROUPS_ORDERED = ("Tools", "Documentation", "Articles", "Uncategorised")
+
+
+def _parse_resources_index(text: str) -> tuple[dict, dict[str, list[dict]]]:
+    if not text.startswith("---\n"):
+        return {"title": "Resources Index", "type": "index",
+                "created": "", "updated": "", "entry_count": 0}, {g: [] for g in _RESOURCE_GROUPS_ORDERED}
+    fm_end = text.index("\n---\n", 4)
+    fm = yaml.safe_load(text[4:fm_end])
+    body = text[fm_end + 5:]
+
+    groups: dict[str, list[dict]] = {g: [] for g in _RESOURCE_GROUPS_ORDERED}
+    current: str | None = None
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current = stripped[3:].strip()
+            continue
+        if current is None or not stripped.startswith("- "):
+            continue
+        try:
+            body_part = stripped[2:]
+            url_part, rest = body_part.split(" — ", 1)
+            title_part, rest = rest.split(" — ", 1)
+            desc_part, mention_part = rest.split(". Mentioned in:", 1)
+            slugs = re.findall(r"\[\[([^\]]+)\]\]", mention_part)
+            groups.setdefault(current, []).append({
+                "url": url_part.strip(),
+                "title": title_part.strip(),
+                "description": desc_part.strip(),
+                "sources": slugs,
+            })
+        except ValueError:
+            continue
+    return fm, groups
+
+
+def _render_resources_index(fm: dict, groups: dict[str, list[dict]]) -> str:
+    parts = [_yaml_frontmatter(fm)]
+    for group in _RESOURCE_GROUPS_ORDERED:
+        entries = groups.get(group) or []
+        if not entries:
+            continue
+        parts.append(f"\n## {group}\n")
+        for e in entries:
+            mentions = ", ".join(f"[[{s}]]" for s in e["sources"])
+            parts.append(
+                f"- {e['url']} — {e['title']} — {e['description']}. Mentioned in: {mentions}\n"
+            )
+    return "".join(parts)
+
+
+def upsert_resources_index(
+    *,
+    vault: Path,
+    resources: list[dict],
+    source_slug: str,
+    today: str,
+) -> Path:
+    path = vault / "wiki" / "sources" / "resources-index.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = path.read_text() if path.exists() else ""
+    fm, groups = _parse_resources_index(existing)
+    if not fm.get("created"):
+        fm["created"] = today
+    fm["updated"] = today
+
+    for res in resources:
+        group = res["group"]
+        existing_entry = next(
+            (e for e in groups.get(group, []) if e["url"] == res["url"]), None
+        )
+        if existing_entry:
+            if source_slug not in existing_entry["sources"]:
+                existing_entry["sources"].append(source_slug)
+        else:
+            groups.setdefault(group, []).append({
+                "url": res["url"],
+                "title": res["title"],
+                "description": res["description"],
+                "sources": [source_slug],
+            })
+
+    fm["entry_count"] = sum(len(v) for v in groups.values())
+    path.write_text(_render_resources_index(fm, groups))
+    return path
