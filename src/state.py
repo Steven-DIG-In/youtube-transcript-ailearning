@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -21,3 +23,20 @@ def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return deepcopy(DEFAULT_STATE)
     return json.loads(path.read_text())
+
+
+def save_state(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=path.name + ".tmp.", dir=path.parent, text=True
+    )
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, sort_keys=True)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
