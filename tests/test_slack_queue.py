@@ -108,3 +108,20 @@ def test_mark_processed_reraises_on_other_errors():
     )
     with pytest.raises(SlackApiError):
         mark_processed(client=client, channel_id="C1", message_ts="1745.3")
+
+
+from src.slack_queue import resolve_bot_user_id
+
+
+def test_resolve_bot_user_id_caches_state(mocker):
+    client = MagicMock()
+    client.auth_test.return_value = {"user_id": "U_BOT_123"}
+    state = {"slack_queue": {"last_message_ts": None, "bot_user_id": None}}
+    bot_id = resolve_bot_user_id(client, state)
+    assert bot_id == "U_BOT_123"
+    assert state["slack_queue"]["bot_user_id"] == "U_BOT_123"
+
+    client.auth_test.reset_mock()
+    bot_id_2 = resolve_bot_user_id(client, state)
+    assert bot_id_2 == "U_BOT_123"
+    client.auth_test.assert_not_called()

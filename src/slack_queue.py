@@ -69,3 +69,12 @@ def mark_processed(*, client: WebClient, channel_id: str, message_ts: str) -> No
         if exc.response.get("error") == "already_reacted":
             return
         raise
+
+
+def resolve_bot_user_id(client: WebClient, state: dict) -> str:
+    cached = state["slack_queue"].get("bot_user_id")
+    if cached:
+        return cached
+    resp = client.auth_test()
+    state["slack_queue"]["bot_user_id"] = resp["user_id"]
+    return resp["user_id"]
