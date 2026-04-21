@@ -126,6 +126,38 @@ def test_fetch_video_raises_when_no_captions(mocker, fixtures_dir, tmp_path):
         fetch_video(metadata["webpage_url"], raw_dir=tmp_path / "raw" / "youtube")
 
 
+def test_fetch_video_wraps_ytdlp_exception_as_fetch_error(mocker, tmp_path):
+    class FailingYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            raise RuntimeError("video unavailable: private")
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FailingYDL)
+    with pytest.raises(FetchError, match="yt-dlp extract_info failed"):
+        fetch_video(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            raw_dir=tmp_path / "raw" / "youtube",
+        )
+
+
+def test_fetch_video_wraps_missing_field_as_fetch_error(mocker, tmp_path):
+    class PartialYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            return {"id": "dQw4w9WgXcQ", "title": "ok", "_transcript_text": "hello"}
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", PartialYDL)
+    with pytest.raises(FetchError, match="missing expected field"):
+        fetch_video(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            raw_dir=tmp_path / "raw" / "youtube",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Task 12: list_new_videos_for_channel
 # ---------------------------------------------------------------------------
@@ -183,3 +215,21 @@ def test_list_new_videos_respects_lookback_when_no_last_seen(mocker):
         now="2026-04-21",
     )
     assert [v["id"] for v in new] == ["v3", "v2"]
+
+
+def test_list_new_videos_wraps_ytdlp_exception_as_fetch_error(mocker):
+    class FailingYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False):
+            raise RuntimeError("channel not found")
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FailingYDL)
+    with pytest.raises(FetchError, match="channel feed failed"):
+        list_new_videos_for_channel(
+            "https://www.youtube.com/@nonexistent",
+            last_seen_video_id=None,
+            lookback_days=14,
+            now="2026-04-21",
+        )

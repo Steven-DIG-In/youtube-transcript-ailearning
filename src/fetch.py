@@ -146,20 +146,28 @@ def fetch_video(url: str, *, raw_dir: Path) -> FetchResult:
     if not transcript:
         raise FetchError(f"no captions available for {info.get('id')}")
 
-    video_id = info["id"]
+    try:
+        video_id = info["id"]
+        title = info["title"]
+        upload_date = info["upload_date"]
+    except KeyError as exc:
+        raise FetchError(
+            f"yt-dlp response missing expected field {exc} for URL: {url}"
+        ) from exc
+
     raw_dir.mkdir(parents=True, exist_ok=True)
     raw_path = raw_dir / f"{video_id}.transcript.txt"
     raw_path.write_text(transcript)
 
     return FetchResult(
         video_id=video_id,
-        title=info["title"],
+        title=title,
         description=info.get("description", ""),
         channel=info.get("channel", ""),
         channel_url=info.get("channel_url", ""),
         channel_id=info.get("channel_id", ""),
         duration_seconds=int(info.get("duration") or 0),
-        published_at=_yyyymmdd_to_iso(info["upload_date"]),
+        published_at=_yyyymmdd_to_iso(upload_date),
         webpage_url=info.get("webpage_url", url),
         transcript=transcript,
         raw_transcript_path=raw_path,
@@ -183,8 +191,11 @@ def list_new_videos_for_channel(
         "extract_flat": "in_playlist",
         "skip_download": True,
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        feed = ydl.extract_info(channel_url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            feed = ydl.extract_info(channel_url, download=False)
+    except Exception as exc:
+        raise FetchError(f"yt-dlp channel feed failed for {channel_url}: {exc}") from exc
     entries = feed.get("entries") or []
 
     cutoff = (datetime.strptime(now, "%Y-%m-%d")
