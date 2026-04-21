@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -71,6 +72,11 @@ def drain_queue_txt(path: Path) -> list[str]:
         for line in path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+    # Read-then-truncate: URLs exist in memory only after this point.
+    # If the process dies before they reach processing, they are lost.
+    # Acceptable per spec §5.3 because queue.txt is a one-shot drop-box;
+    # the watchlist covers persistent subscriptions. Dedup catches any
+    # re-ingestion attempt.
     path.write_text("")
     return urls
 
@@ -162,7 +168,7 @@ def process_one_video(
     )
     source_path = write_source_page(
         vault=vault,
-        fetch=fetch_result.__dict__,
+        fetch=dataclasses.asdict(fetch_result),
         extraction=extraction,
         creator_slug=creator_slug,
         date_ingested=today,
@@ -188,6 +194,16 @@ def process_one_video(
         message=f"Ingested {fetch_result.video_id} → {source_slug}",
     )
 
+    # Mark the video owned before recording secondary metadata about it.
+    # If mark_ingested ever fails (shouldn't — pure dict mutation), we don't
+    # want stale proposed-category counts for a video state treats as un-ingested.
+    mark_ingested(
+        state,
+        video_id=fetch_result.video_id,
+        source_page=f"wiki/sources/{source_path.name}",
+        creator_slug=creator_slug,
+        ingested_at=now_iso,
+    )
     proposed_slugs: list[str] = []
     for p in extraction["proposed_new_categories"]:
         record_proposed_category(
@@ -197,13 +213,6 @@ def process_one_video(
             now=now_iso,
         )
         proposed_slugs.append(p["slug"])
-    mark_ingested(
-        state,
-        video_id=fetch_result.video_id,
-        source_page=f"wiki/sources/{source_path.name}",
-        creator_slug=creator_slug,
-        ingested_at=now_iso,
-    )
 
     return ProcessedVideo(
         video_id=fetch_result.video_id,
