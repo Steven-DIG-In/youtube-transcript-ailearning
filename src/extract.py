@@ -53,6 +53,10 @@ _REQUIRED_FIELDS = (
 
 _VALID_DOMAINS = {"claude-code", "prompt-eng", "model-compare", "sdk-api", "workflow"}
 _VALID_RESOURCE_GROUPS = {"Tools", "Documentation", "Articles", "Uncategorised"}
+_LIST_FIELDS = (
+    "key_takeaways", "resources", "categories",
+    "proposed_new_categories", "tags", "connections",
+)
 
 
 def parse_extraction_response(raw: str) -> dict:
@@ -69,9 +73,16 @@ def parse_extraction_response(raw: str) -> dict:
     for field in _REQUIRED_FIELDS:
         if field not in data:
             raise ExtractionError(f"missing required field: {field}")
+    for field in _LIST_FIELDS:
+        if not isinstance(data[field], list):
+            raise ExtractionError(
+                f"field '{field}' must be a list, got {type(data[field]).__name__}"
+            )
     if data["domain"] not in _VALID_DOMAINS:
         raise ExtractionError(f"invalid domain: {data['domain']}")
     for res in data["resources"]:
+        if not isinstance(res, dict):
+            raise ExtractionError(f"resource entries must be objects, got {type(res).__name__}")
         if res.get("group") not in _VALID_RESOURCE_GROUPS:
             raise ExtractionError(
                 f"invalid resource group: {res.get('group')!r}"
@@ -89,47 +100,33 @@ def split_prompt_for_caching(rendered: str) -> tuple[str, str]:
 
 MAX_JSON_RETRIES = 2
 MAX_OUTPUT_TOKENS = 8000
+DEFAULT_MODEL = "claude-sonnet-4-7"
+_RETRY_NUDGE = (
+    "That response was not valid JSON matching the required schema. "
+    "Return ONLY the JSON object, no prose and no fences."
+)
 
 
-def call_extract(client, *, prompt: str, model: str) -> dict:
+def _cached_user_content(static: str, variable: str) -> list[dict]:
+    return [
+        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": variable},
+    ]
+
+
+def call_extract(client, *, prompt: str, model: str = DEFAULT_MODEL) -> dict:
+    static, variable = split_prompt_for_caching(prompt)
     last_raw: str | None = None
-    try:
-        static, variable = split_prompt_for_caching(prompt)
-        use_caching = True
-    except ValueError:
-        use_caching = False
     for attempt in range(MAX_JSON_RETRIES + 1):
-        if use_caching:
-            if attempt == 0:
-                messages = [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": static,
-                         "cache_control": {"type": "ephemeral"}},
-                        {"type": "text", "text": variable},
-                    ],
-                }]
-            else:
-                messages = [
-                    {"role": "user", "content": [
-                        {"type": "text", "text": static,
-                         "cache_control": {"type": "ephemeral"}},
-                        {"type": "text", "text": variable},
-                    ]},
-                    {"role": "assistant", "content": last_raw or ""},
-                    {"role": "user", "content":
-                        "That response was not valid JSON matching the required schema. "
-                        "Return ONLY the JSON object, no prose and no fences."},
-                ]
-        elif attempt == 0:
-            messages = [{"role": "user", "content": prompt}]
+        if attempt == 0:
+            messages = [
+                {"role": "user", "content": _cached_user_content(static, variable)},
+            ]
         else:
             messages = [
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": _cached_user_content(static, variable)},
                 {"role": "assistant", "content": last_raw or ""},
-                {"role": "user", "content":
-                    "That response was not valid JSON matching the required schema. "
-                    "Return ONLY the JSON object, no prose and no fences."},
+                {"role": "user", "content": _RETRY_NUDGE},
             ]
         response = client.messages.create(
             model=model,

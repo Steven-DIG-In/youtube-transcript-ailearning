@@ -99,6 +99,18 @@ def test_parse_extraction_response_raises_on_bad_resource_group():
         parse_extraction_response(json.dumps(bad))
 
 
+def test_parse_extraction_response_raises_when_list_field_is_not_list():
+    bad = {**VALID_RESPONSE, "categories": "optimising-ai"}
+    with pytest.raises(ExtractionError, match="'categories' must be a list"):
+        parse_extraction_response(json.dumps(bad))
+
+
+def test_parse_extraction_response_raises_when_resources_is_null():
+    bad = {**VALID_RESPONSE, "resources": None}
+    with pytest.raises(ExtractionError, match="'resources' must be a list"):
+        parse_extraction_response(json.dumps(bad))
+
+
 # ---------------------------------------------------------------------------
 # Task 17: call_extract with retry
 # ---------------------------------------------------------------------------
@@ -113,12 +125,21 @@ def _fake_message(text: str):
     return msg
 
 
+# Minimal prompt that contains the "## Inputs" split marker so call_extract
+# exercises the cached-content code path (the only path that runs in production).
+_TEST_PROMPT = "rules and schema go here.\n\n## Inputs\nvideo data here.\n"
+
+
 def test_call_extract_succeeds_on_first_valid_response(mocker):
     client = MagicMock()
     client.messages.create.return_value = _fake_message(json.dumps(VALID_RESPONSE))
-    result = call_extract(client, prompt="p", model="claude-sonnet-4-7")
+    result = call_extract(client, prompt=_TEST_PROMPT, model="claude-sonnet-4-7")
     assert result == VALID_RESPONSE
     assert client.messages.create.call_count == 1
+    sent = client.messages.create.call_args.kwargs["messages"]
+    # user content is the structured list with cache_control on the static block
+    assert isinstance(sent[0]["content"], list)
+    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
 def test_call_extract_retries_invalid_json_up_to_twice(mocker):
@@ -127,7 +148,7 @@ def test_call_extract_retries_invalid_json_up_to_twice(mocker):
         _fake_message("not json"),
         _fake_message(json.dumps(VALID_RESPONSE)),
     ]
-    result = call_extract(client, prompt="p", model="claude-sonnet-4-7")
+    result = call_extract(client, prompt=_TEST_PROMPT, model="claude-sonnet-4-7")
     assert result == VALID_RESPONSE
     assert client.messages.create.call_count == 2
 
@@ -136,8 +157,14 @@ def test_call_extract_raises_after_all_retries(mocker):
     client = MagicMock()
     client.messages.create.return_value = _fake_message("still not json")
     with pytest.raises(ExtractionError):
-        call_extract(client, prompt="p", model="claude-sonnet-4-7")
+        call_extract(client, prompt=_TEST_PROMPT, model="claude-sonnet-4-7")
     assert client.messages.create.call_count == 3  # initial + 2 retries
+
+
+def test_call_extract_raises_value_error_without_inputs_marker():
+    client = MagicMock()
+    with pytest.raises(ValueError):
+        call_extract(client, prompt="no marker here", model="claude-sonnet-4-7")
 
 
 # ---------------------------------------------------------------------------
