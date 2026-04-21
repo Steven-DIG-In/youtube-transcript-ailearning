@@ -10,6 +10,7 @@ from src.fetch import extract_video_id, extract_youtube_urls_from_text, self_upd
     ("https://youtu.be/dQw4w9WgXcQ?si=abc123", "dQw4w9WgXcQ"),
     ("https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
     ("https://m.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+    ("https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
 ])
 def test_extract_video_id(url, expected):
     assert extract_video_id(url) == expected
@@ -58,4 +59,12 @@ def test_self_update_raises_on_failure(mocker):
     mock_run.return_value.returncode = 1
     mock_run.return_value.stderr = "network error"
     with pytest.raises(RuntimeError, match="yt-dlp self-update failed"):
+        self_update_ytdlp()
+
+
+def test_self_update_raises_on_timeout(mocker):
+    import subprocess as _subprocess
+    mock_run = mocker.patch("src.fetch.subprocess.run")
+    mock_run.side_effect = _subprocess.TimeoutExpired(cmd="pip", timeout=120)
+    with pytest.raises(RuntimeError, match="timed out"):
         self_update_ytdlp()

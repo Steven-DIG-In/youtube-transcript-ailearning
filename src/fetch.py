@@ -22,6 +22,8 @@ def extract_video_id(url: str) -> str | None:
         candidate = parsed.path.lstrip("/").split("/")[0]
     elif parsed.path.startswith("/shorts/"):
         candidate = parsed.path.split("/")[2] if len(parsed.path.split("/")) > 2 else ""
+    elif parsed.path.startswith("/embed/"):
+        candidate = parsed.path.split("/")[2] if len(parsed.path.split("/")) > 2 else ""
     else:
         qs = parse_qs(parsed.query)
         candidate = qs.get("v", [""])[0]
@@ -39,12 +41,21 @@ def extract_youtube_urls_from_text(text: str) -> list[str]:
     return results
 
 
+SELF_UPDATE_TIMEOUT_SECONDS = 120
+
+
 def self_update_ytdlp() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-U", "--quiet", "yt-dlp"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "--quiet", "yt-dlp"],
+            capture_output=True,
+            text=True,
+            timeout=SELF_UPDATE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"yt-dlp self-update timed out after {SELF_UPDATE_TIMEOUT_SECONDS}s"
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(
             f"yt-dlp self-update failed: {result.stderr.strip() or 'unknown'}"
