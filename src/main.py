@@ -275,10 +275,14 @@ def run_once(
     try:
         self_update_ytdlp()
     except RuntimeError as exc:
-        # v1 deferral: spec §8.2 row 1 also prescribes a 🚨 Slack alert on
-        # persistent yt-dlp failure. For now we log and continue; the missing
-        # daily summary will surface the issue on the next successful run.
         logger.error("yt-dlp self-update failed: %s", exc)
+        try:
+            slack_client.chat_postMessage(
+                channel=slack_channel_id,
+                text=f"🚨 yt-dlp self-update failed: {exc}",
+            )
+        except Exception as post_exc:
+            logger.warning("failed to post self-update alert: %s", post_exc)
 
     # Slack bot ID resolution is tolerant of Slack outages — fall back to
     # None so read_pending_urls simply skips the bot-filter step rather than
