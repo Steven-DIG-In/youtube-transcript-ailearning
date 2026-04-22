@@ -305,6 +305,7 @@ def run_once(
 
     watchlist_urls: list[str] = []
     hint_by_video_id: dict[str, list[str]] = {}
+    skipped: list[dict] = []
     for channel in cfg.watchlist:
         channel_state = state["channels"].setdefault(channel.url, {
             "last_checked_at": None, "last_seen_video_id": None,
@@ -319,7 +320,15 @@ def run_once(
         except FetchError as exc:
             logger.warning("watchlist poll failed for %s: %s", channel.url, exc)
             continue
+        min_dur = channel.min_duration_seconds or cfg.ingest.min_duration_seconds
         for v in new_videos:
+            duration = v.get("duration") or 0
+            if duration and duration < min_dur:
+                skipped.append({
+                    "title": v.get("title") or v.get("id") or "",
+                    "reason": f"duration {duration}s below minimum {min_dur}s",
+                })
+                continue
             url = v.get("url") or f"https://www.youtube.com/watch?v={v['id']}"
             watchlist_urls.append(url)
             hint_by_video_id[v["id"]] = channel.default_categories
@@ -336,7 +345,6 @@ def run_once(
     )[: cfg.ingest.max_videos_per_run]
 
     ingested: list[VideoResult] = []
-    skipped: list[dict] = []
     failed: list[dict] = []
     dead_today: list[dict] = []
 

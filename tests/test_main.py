@@ -156,6 +156,59 @@ def test_process_one_video_writes_all_artifacts(mocker, temp_vault, fixtures_dir
 from src.main import run_once
 
 
+def test_run_once_filters_watchlist_videos_below_min_duration(
+    mocker, temp_vault, tmp_path
+):
+    mocker.patch("src.main.self_update_ytdlp")
+    mocker.patch(
+        "src.main.list_new_videos_for_channel",
+        return_value=[
+            {
+                "id": "aaaaaaaaaaa",
+                "title": "Short Clip",
+                "duration": 30,
+                "url": "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                "upload_date": "20260420",
+            },
+        ],
+    )
+    fetch_video = mocker.patch("src.main.fetch_video")
+    process_one_video = mocker.patch("src.main.process_one_video")
+    mocker.patch("src.main.Anthropic")
+    slack_client = mocker.patch("src.main.WebClient").return_value
+    slack_client.auth_test.return_value = {"user_id": "U_BOT"}
+    slack_client.chat_postMessage.return_value = {"ts": "1745.5"}
+    slack_client.conversations_history.return_value = {
+        "messages": [], "has_more": False,
+    }
+
+    state_path = tmp_path / "state.json"
+    queue_path = tmp_path / "queue.txt"
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "watchlist:\n"
+        "  - url: https://www.youtube.com/@Foo\n"
+        "seed_categories: [optimising-ai]\n"
+        "ingest:\n"
+        "  max_videos_per_run: 10\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+    )
+
+    run_once(
+        config_path=config_path, state_path=state_path, queue_path=queue_path,
+        vault=temp_vault, slack_channel_id="C1", anthropic_api_key="x",
+        slack_bot_token="y", today="2026-04-21", now_iso="2026-04-21T09:00:00Z",
+    )
+
+    fetch_video.assert_not_called()
+    process_one_video.assert_not_called()
+    top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
+    assert "SKIPPED" in top_text
+    assert "Short Clip" in top_text
+    assert "30" in top_text  # duration reason surfaces the actual seconds
+
+
 def test_run_once_heartbeat_on_empty(mocker, temp_vault, tmp_path):
     mocker.patch("src.main.self_update_ytdlp")
     slack_client = mocker.patch("src.main.WebClient").return_value
