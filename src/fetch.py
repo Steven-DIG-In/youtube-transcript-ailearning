@@ -216,18 +216,35 @@ def list_new_videos_for_channel(
             feed = ydl.extract_info(channel_url, download=False)
     except Exception as exc:
         raise FetchError(f"yt-dlp channel feed failed for {channel_url}: {exc}") from exc
-    entries = feed.get("entries") or []
+
+    videos = _flatten_video_entries(feed.get("entries") or [])
 
     cutoff = (datetime.strptime(now, "%Y-%m-%d")
               - timedelta(days=lookback_days)).strftime("%Y%m%d")
 
     results: list[dict] = []
-    for entry in entries:
+    for entry in videos:
         vid = entry.get("id")
-        upload = entry.get("upload_date") or "00000000"
+        upload = entry.get("upload_date")
         if last_seen_video_id and vid == last_seen_video_id:
             break
-        if not last_seen_video_id and upload < cutoff:
+        # Missing upload_date is common with extract_flat — trust feed
+        # ordering (newest first) and let max_videos_per_run cap downstream.
+        if not last_seen_video_id and upload and upload < cutoff:
             break
         results.append(entry)
     return results
+
+
+def _flatten_video_entries(entries: list[dict]) -> list[dict]:
+    """Descend into nested playlist entries (e.g. the Videos/Shorts split
+    yt-dlp returns for a channel root URL) so callers iterate real videos."""
+    out: list[dict] = []
+    for entry in entries:
+        if entry is None:
+            continue
+        if entry.get("_type") == "playlist":
+            out.extend(_flatten_video_entries(entry.get("entries") or []))
+        else:
+            out.append(entry)
+    return out

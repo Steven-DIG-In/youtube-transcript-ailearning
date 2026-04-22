@@ -217,6 +217,75 @@ def test_list_new_videos_respects_lookback_when_no_last_seen(mocker):
     assert [v["id"] for v in new] == ["v3", "v2"]
 
 
+def test_list_new_videos_flattens_nested_playlist_channel_feed(mocker):
+    """YouTube channels return a Videos/Shorts split as nested playlists
+    (seen on @Itssssss_Jack 2026-04-22). Treating playlist entries as videos
+    gave us id=UCxxx (channel ID) with no upload_date — the next check then
+    breaks on the first entry and we return zero videos for a live channel."""
+    feed = {
+        "entries": [
+            {
+                "_type": "playlist",
+                "title": "Jack - Videos",
+                "entries": [
+                    {"id": "vid1", "_type": "url", "duration": 900,
+                     "title": "Most recent", "upload_date": None},
+                    {"id": "vid2", "_type": "url", "duration": 600,
+                     "title": "Older video", "upload_date": None},
+                ],
+            },
+            {
+                "_type": "playlist",
+                "title": "Jack - Shorts",
+                "entries": [
+                    {"id": "short1", "_type": "url", "duration": 30,
+                     "title": "Short", "upload_date": None},
+                ],
+            },
+        ]
+    }
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False): return feed
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    new = list_new_videos_for_channel(
+        "https://www.youtube.com/@Jack",
+        last_seen_video_id=None, lookback_days=14, now="2026-04-22",
+    )
+    assert [v["id"] for v in new] == ["vid1", "vid2", "short1"]
+
+
+def test_list_new_videos_includes_entries_missing_upload_date(mocker):
+    """extract_flat populates upload_date only in some extractor versions.
+    When absent, default to including the entry (ordering puts newest first,
+    max_videos_per_run caps downstream). Previously defaulted to '00000000'
+    which always triggered the '< cutoff' break on iteration one."""
+    feed = {
+        "entries": [
+            {"id": "v3", "upload_date": None},
+            {"id": "v2", "upload_date": None},
+            {"id": "v1", "upload_date": None},
+        ]
+    }
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def extract_info(self, url, download=False): return feed
+
+    mocker.patch("src.fetch.yt_dlp.YoutubeDL", FakeYDL)
+    new = list_new_videos_for_channel(
+        "https://www.youtube.com/@Jack",
+        last_seen_video_id=None, lookback_days=14, now="2026-04-22",
+    )
+    assert [v["id"] for v in new] == ["v3", "v2", "v1"]
+
+
 def test_list_new_videos_wraps_ytdlp_exception_as_fetch_error(mocker):
     class FailingYDL:
         def __init__(self, opts): pass
