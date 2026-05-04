@@ -145,6 +145,7 @@ def process_one_video(
     today: str,
     now_iso: str,
     model: str = "claude-sonnet-4-6",
+    usage_log_path: Path | None = None,
 ) -> ProcessedVideo:
     raw_dir = vault / "raw" / "youtube"
     fetch_result = fetch_video(url, raw_dir=raw_dir)
@@ -162,7 +163,9 @@ def process_one_video(
         resources_index_snapshot=_resources_index_snapshot(vault),
         transcript=fetch_result.transcript,
     )
-    extraction = call_extract(client, prompt=prompt, model=model)
+    extraction = call_extract(
+        client, prompt=prompt, model=model, usage_log_path=usage_log_path,
+    )
 
     creator_slug_pre = f"creator-{kebab_slug(fetch_result.channel)}"
     creator_existed = (vault / "wiki" / "entities" / f"{creator_slug_pre}.md").exists()
@@ -363,6 +366,7 @@ def run_once(
                 channel_hint_categories=hint_by_video_id.get(cand.video_id, []),
                 today=today,
                 now_iso=now_iso,
+                usage_log_path=log_dir / "usage.csv",
             )
             if cand.slack_item is not None:
                 try:

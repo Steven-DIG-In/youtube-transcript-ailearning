@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import csv
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "extract.md"
+_USAGE_FIELDS = (
+    "ts",
+    "model",
+    "attempt",
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
 
 
 def render_extract_prompt(
@@ -114,7 +125,37 @@ def _cached_user_content(static: str, variable: str) -> list[dict]:
     ]
 
 
-def call_extract(client, *, prompt: str, model: str = DEFAULT_MODEL) -> dict:
+def _log_usage(path: Path, *, model: str, attempt: int, response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    row = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "model": model,
+        "attempt": attempt,
+        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+        "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+    }
+    if not all(isinstance(row[k], int) for k in _USAGE_FIELDS if k not in ("ts", "model")):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists()
+    with path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(_USAGE_FIELDS))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def call_extract(
+    client,
+    *,
+    prompt: str,
+    model: str = DEFAULT_MODEL,
+    usage_log_path: Path | None = None,
+) -> dict:
     static, variable = split_prompt_for_caching(prompt)
     last_raw: str | None = None
     for attempt in range(MAX_JSON_RETRIES + 1):
@@ -133,6 +174,8 @@ def call_extract(client, *, prompt: str, model: str = DEFAULT_MODEL) -> dict:
             max_tokens=MAX_OUTPUT_TOKENS,
             messages=messages,
         )
+        if usage_log_path is not None:
+            _log_usage(usage_log_path, model=model, attempt=attempt + 1, response=response)
         raw = response.content[0].text
         last_raw = raw
         try:
