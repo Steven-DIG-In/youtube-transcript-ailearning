@@ -4,6 +4,17 @@
 - `optimising-ai` — caching, thinking, model selection, latency, cost
 - `tool-combinations` — integrating multiple tools (Claude + Stitch + Supabase etc.)
 - `future-trends` — industry predictions, hot-topic debates, new product launches
+- `agent-engineering` — designing, instructing, evaluating individual agents
+- `multi-agent-systems` — sub-agents, agent teams, orchestration patterns
+- `claude-code-workflows` — Claude Code productivity tricks, slash commands, hooks, skills, plan mode, sessions
+- `ai-agency-business` — running an AI agency: niche selection, pricing, retainers, offer design, client work (use a `client-acquisition` tag for outreach/funnels specifically)
+- `openclaw` — OpenClaw-specific content
+- `memory-systems` — long-term memory, context persistence, vector stores, knowledge graphs for AI
+- `skill-engineering` — designing, packaging, and reusing AI skills / prompts as composable units
+- `cost-optimisation` — reducing AI/tooling spend: caching, model routing, free tiers, local models, token efficiency
+- `client-retention` — keeping AI agency clients: success metrics, reporting, scope management, churn prevention
+- `open-source-ai-tools` — open-source LLM tooling, self-hostable agents, community projects
+- `browser-automation` — Playwright / browser-driver patterns for AI agents and QA
 
 ## Proposing new categories
 

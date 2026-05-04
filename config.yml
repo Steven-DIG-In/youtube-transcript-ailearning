@@ -1,5 +1,12 @@
 watchlist:
   - url: https://www.youtube.com/@Itssssss_Jack
+  - url: https://www.youtube.com/@nicksaraev
+  - url: https://www.youtube.com/@nateherk
+  - url: https://www.youtube.com/@askmichia
+  - url: https://www.youtube.com/@michtortiyt
+  - url: https://www.youtube.com/@anthropic-ai
+  - url: https://www.youtube.com/@NetworkChuck
+  - url: https://www.youtube.com/@buildnpublic
 
 seed_categories:
   - building-websites
@@ -8,6 +15,15 @@ seed_categories:
   - future-trends
   - agent-engineering
   - multi-agent-systems
+  - openclaw
+  - claude-code-workflows
+  - ai-agency-business
+  - memory-systems
+  - skill-engineering
+  - cost-optimisation
+  - client-retention
+  - open-source-ai-tools
+  - browser-automation
 
 ingest:
   max_videos_per_run: 2
