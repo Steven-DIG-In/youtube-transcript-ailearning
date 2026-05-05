@@ -8,7 +8,6 @@
 - `multi-agent-systems` — sub-agents, agent teams, orchestration patterns
 - `claude-code-workflows` — Claude Code productivity tricks, slash commands, hooks, skills, plan mode, sessions
 - `ai-agency-business` — running an AI agency: niche selection, pricing, retainers, offer design, client work (use a `client-acquisition` tag for outreach/funnels specifically)
-- `openclaw` — OpenClaw-specific content
 - `memory-systems` — long-term memory, context persistence, vector stores, knowledge graphs for AI
 - `skill-engineering` — designing, packaging, and reusing AI skills / prompts as composable units
 - `cost-optimisation` — reducing AI/tooling spend: caching, model routing, free tiers, local models, token efficiency
