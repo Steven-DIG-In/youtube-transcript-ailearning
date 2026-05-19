@@ -125,8 +125,6 @@ def _fake_message(text: str):
     return msg
 
 
-# Minimal prompt that contains the "## Inputs" split marker so call_extract
-# exercises the cached-content code path (the only path that runs in production).
 _TEST_PROMPT = "rules and schema go here.\n\n## Inputs\nvideo data here.\n"
 
 
@@ -137,9 +135,7 @@ def test_call_extract_succeeds_on_first_valid_response(mocker):
     assert result == VALID_RESPONSE
     assert client.messages.create.call_count == 1
     sent = client.messages.create.call_args.kwargs["messages"]
-    # user content is the structured list with cache_control on the static block
-    assert isinstance(sent[0]["content"], list)
-    assert sent[0]["content"][0]["cache_control"] == {"type": "ephemeral"}
+    assert sent[0]["content"] == _TEST_PROMPT
 
 
 def test_call_extract_retries_invalid_json_up_to_twice(mocker):
@@ -159,32 +155,3 @@ def test_call_extract_raises_after_all_retries(mocker):
     with pytest.raises(ExtractionError):
         call_extract(client, prompt=_TEST_PROMPT, model="claude-sonnet-4-7")
     assert client.messages.create.call_count == 3  # initial + 2 retries
-
-
-def test_call_extract_raises_value_error_without_inputs_marker():
-    client = MagicMock()
-    with pytest.raises(ValueError):
-        call_extract(client, prompt="no marker here", model="claude-sonnet-4-7")
-
-
-# ---------------------------------------------------------------------------
-# Task 18: split_prompt_for_caching + cache_control in call_extract
-# ---------------------------------------------------------------------------
-from src.extract import split_prompt_for_caching
-
-
-def test_split_prompt_separates_static_from_variable():
-    full = render_extract_prompt(
-        title="t", channel="c", channel_url="u",
-        published_at="2026-04-15", duration_seconds=10,
-        description="d", channel_hint_categories=[],
-        seed_categories=["optimising-ai"],
-        existing_creator_page="", resources_index_snapshot="",
-        transcript="xx",
-    )
-    static, variable = split_prompt_for_caching(full)
-    assert "## Rules" in static
-    assert "## Required JSON schema" in static
-    assert "## Inputs" not in static
-    assert "## Inputs" in variable
-    assert "xx" in variable  # transcript is in variable block

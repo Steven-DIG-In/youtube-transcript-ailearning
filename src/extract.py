@@ -101,14 +101,6 @@ def parse_extraction_response(raw: str) -> dict:
     return data
 
 
-_SPLIT_MARKER = "## Inputs"
-
-
-def split_prompt_for_caching(rendered: str) -> tuple[str, str]:
-    idx = rendered.index(_SPLIT_MARKER)
-    return rendered[:idx].rstrip(), rendered[idx:]
-
-
 MAX_JSON_RETRIES = 2
 MAX_OUTPUT_TOKENS = 8000
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -116,13 +108,6 @@ _RETRY_NUDGE = (
     "That response was not valid JSON matching the required schema. "
     "Return ONLY the JSON object, no prose and no fences."
 )
-
-
-def _cached_user_content(static: str, variable: str) -> list[dict]:
-    return [
-        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": variable},
-    ]
 
 
 def _log_usage(path: Path, *, model: str, attempt: int, response) -> None:
@@ -156,16 +141,13 @@ def call_extract(
     model: str = DEFAULT_MODEL,
     usage_log_path: Path | None = None,
 ) -> dict:
-    static, variable = split_prompt_for_caching(prompt)
     last_raw: str | None = None
     for attempt in range(MAX_JSON_RETRIES + 1):
         if attempt == 0:
-            messages = [
-                {"role": "user", "content": _cached_user_content(static, variable)},
-            ]
+            messages = [{"role": "user", "content": prompt}]
         else:
             messages = [
-                {"role": "user", "content": _cached_user_content(static, variable)},
+                {"role": "user", "content": prompt},
                 {"role": "assistant", "content": last_raw or ""},
                 {"role": "user", "content": _RETRY_NUDGE},
             ]
