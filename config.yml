@@ -23,6 +23,9 @@ seed_categories:
   - client-retention
   - open-source-ai-tools
   - browser-automation
+  - codex-workflows
+  - offer-design
+  - design-systems
 
 ingest:
   max_videos_per_run: 2
