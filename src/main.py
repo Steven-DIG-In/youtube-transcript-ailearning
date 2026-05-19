@@ -303,12 +303,16 @@ def run_once(
     # Queue source ordering per spec §5.4: queue.txt → Slack → watchlist.
     queue_urls = drain_queue_txt(queue_path)
 
-    slack_items = read_pending_urls(
-        client=slack_client,
-        channel_id=slack_channel_id,
-        last_message_ts=state["slack_queue"]["last_message_ts"],
-        bot_user_id=bot_user_id,
-    )
+    try:
+        slack_items = read_pending_urls(
+            client=slack_client,
+            channel_id=slack_channel_id,
+            last_message_ts=state["slack_queue"]["last_message_ts"],
+            bot_user_id=bot_user_id,
+        )
+    except Exception as exc:
+        logger.warning("read_pending_urls failed, continuing without Slack queue: %s", exc)
+        slack_items = []
 
     watchlist_urls: list[str] = []
     hint_by_video_id: dict[str, list[str]] = {}
