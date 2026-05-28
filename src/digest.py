@@ -5,8 +5,8 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
