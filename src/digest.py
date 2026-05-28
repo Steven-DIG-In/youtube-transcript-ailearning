@@ -5,9 +5,12 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import yaml
 
 
 SONNET_INPUT_USD_PER_MTOK = 3.00
@@ -93,3 +96,56 @@ def select_recent_ingests(
         ))
     refs.sort(key=lambda r: r.ingested_at, reverse=True)
     return refs
+
+
+_SECTION_RE = re.compile(r"^## (?P<name>.+)$", re.MULTILINE)
+_WIKILINK_RE = re.compile(r"^\[\[(.+)\]\]$")
+
+
+def _split_sections(body: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    matches = list(_SECTION_RE.finditer(body))
+    for i, m in enumerate(matches):
+        name = m.group("name").strip()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        out[name] = body[start:end].strip()
+    return out
+
+
+def _bullet_items(section_text: str) -> list[str]:
+    items: list[str] = []
+    for line in section_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            items.append(stripped[2:].strip())
+    return items
+
+
+def parse_source_page(path: Path) -> SourcePage:
+    text = path.read_text()
+    if not text.startswith("---\n"):
+        raise ValueError(f"source page missing frontmatter: {path}")
+    fm_end = text.index("\n---\n", 4)
+    fm = yaml.safe_load(text[4:fm_end]) or {}
+    body = text[fm_end + 5:]
+    sections = _split_sections(body)
+
+    creator_raw = str(fm.get("creator", ""))
+    wikimatch = _WIKILINK_RE.match(creator_raw)
+    creator = wikimatch.group(1) if wikimatch else creator_raw
+
+    return SourcePage(
+        slug=path.stem,
+        title=str(fm.get("title", "")),
+        video_url=str(fm.get("video_url", "")),
+        creator=creator,
+        published_at=str(fm.get("published_at", "")),
+        duration_seconds=int(fm.get("duration_seconds") or 0),
+        categories=list(fm.get("categories") or []),
+        domain=str(fm.get("domain", "")),
+        tags=list(fm.get("tags") or []),
+        session_summary=sections.get("Session Summary", ""),
+        instructions_md=sections.get("Instructions & How-To", ""),
+        key_takeaways=_bullet_items(sections.get("Key Takeaways", "")),
+    )
