@@ -6,7 +6,7 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -62,3 +62,34 @@ class Aggregates:
     top_categories: list[tuple[str, int]]    # [(slug, count), ...] top 5
     volume_per_day: list[tuple[str, int]]    # [(weekday_label, count), ...] 7 entries
     top_tools: list[tuple[str, int]]         # [(name, count), ...] top 5
+
+
+def select_recent_ingests(
+    state: dict,
+    *,
+    vault: Path,
+    now: datetime,
+    window_days: int,
+) -> list[IngestRef]:
+    cutoff = now - timedelta(days=window_days)
+    refs: list[IngestRef] = []
+    for vid, entry in (state.get("ingested_video_ids") or {}).items():
+        ts_raw = entry.get("ingested_at")
+        if not ts_raw:
+            continue
+        ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts < cutoff:
+            continue
+        source_page = entry["source_page"]            # e.g. "wiki/sources/foo.md"
+        source_slug = Path(source_page).stem
+        refs.append(IngestRef(
+            video_id=vid,
+            creator_slug=entry.get("creator_slug", ""),
+            source_slug=source_slug,
+            source_page_path=vault / source_page,
+            ingested_at=ts,
+        ))
+    refs.sort(key=lambda r: r.ingested_at, reverse=True)
+    return refs
