@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps
-from src.write import write_source_page
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools
+from src.write import write_source_page, upsert_resources_index
 
 
 def _state(entries):
@@ -152,3 +152,55 @@ def test_detect_steps_ignores_indented_sub_items():
         "2. Top two.\n"
     )
     assert detect_steps(md) == ["Top one.", "Top two."]
+
+
+def test_tools_for_sources_maps_tools_group_by_source(tmp_path):
+    upsert_resources_index(
+        vault=tmp_path,
+        resources=[
+            {"url": "https://n8n.io", "title": "n8n",
+             "description": "workflow automation", "group": "Tools"},
+            {"url": "https://docs.example.com", "title": "Docs",
+             "description": "reference", "group": "Documentation"},
+        ],
+        source_slug="creator-a--video-1",
+        today="2026-05-26",
+    )
+    upsert_resources_index(
+        vault=tmp_path,
+        resources=[
+            {"url": "https://n8n.io", "title": "n8n",
+             "description": "workflow automation", "group": "Tools"},
+            {"url": "https://cursor.sh", "title": "Cursor",
+             "description": "ide", "group": "Tools"},
+        ],
+        source_slug="creator-b--video-2",
+        today="2026-05-27",
+    )
+
+    index_path = tmp_path / "wiki" / "sources" / "resources-index.md"
+    tools_by_slug = tools_for_sources(
+        index_path,
+        slugs=["creator-a--video-1", "creator-b--video-2"],
+    )
+
+    assert tools_by_slug["creator-a--video-1"] == ["n8n"]
+    assert sorted(tools_by_slug["creator-b--video-2"]) == ["Cursor", "n8n"]
+
+
+def test_top_tools_ranks_by_frequency():
+    tools_by_slug = {
+        "a": ["n8n", "Cursor"],
+        "b": ["n8n"],
+        "c": ["n8n", "Supabase"],
+        "d": ["Cursor"],
+    }
+    ranked = top_tools(tools_by_slug, k=5)
+    assert ranked[0] == ("n8n", 3)
+    assert ("Cursor", 2) in ranked
+    assert ("Supabase", 1) in ranked
+
+
+def test_tools_for_sources_returns_empty_when_index_missing(tmp_path):
+    missing = tmp_path / "does-not-exist.md"
+    assert tools_for_sources(missing, slugs=["x"]) == {"x": []}

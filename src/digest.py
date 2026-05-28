@@ -6,11 +6,14 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
+
+from src.write import _parse_resources_index
 
 
 SONNET_INPUT_USD_PER_MTOK = 3.00
@@ -167,3 +170,32 @@ def detect_steps(instructions_md: str) -> list[str] | None:
     if len(steps) < 2:
         return None
     return steps
+
+
+def tools_for_sources(
+    index_path: Path,
+    *,
+    slugs: list[str],
+) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {s: [] for s in slugs}
+    if not index_path.exists():
+        return out
+    _, groups = _parse_resources_index(index_path.read_text())
+    tools = groups.get("Tools") or []
+    slug_set = set(slugs)
+    for entry in tools:
+        for s in entry.get("sources", []):
+            if s in slug_set:
+                out[s].append(entry["title"])
+    return out
+
+
+def top_tools(
+    tools_by_slug: dict[str, list[str]],
+    *,
+    k: int = 5,
+) -> list[tuple[str, int]]:
+    counter: Counter[str] = Counter()
+    for tools in tools_by_slug.values():
+        counter.update(tools)
+    return counter.most_common(k)
