@@ -244,3 +244,37 @@ def test_deliver_undelivered_drops_entry_when_log_corrupt(tmp_path):
     client = MagicMock()
     deliver_undelivered_summaries(client=client, channel_id="C1", state=state)
     assert state["undelivered_summaries"] == []  # corrupt log is unrecoverable
+
+
+# ---------------------------------------------------------------------------
+# Task 2: digest_pointer field and render line
+# ---------------------------------------------------------------------------
+
+
+def _empty_summary(**over):
+    kwargs = dict(
+        run_date="2026-05-28 10:30",
+        ingested=[],
+        skipped=[],
+        failed=[],
+        storage_bytes=0,
+        storage_video_count=0,
+        storage_added_today=0,
+        proposed_categories_pending=[],
+        autopromoted_categories=[],
+        dead_today=[],
+        digest_pointer=None,
+    )
+    kwargs.update(over)
+    return RunSummary(**kwargs)
+
+
+def test_compose_top_level_omits_digest_line_when_pointer_none():
+    body = compose_top_level(_empty_summary(digest_pointer=None))
+    assert "digest" not in body.lower()
+
+
+def test_compose_top_level_includes_digest_pointer_when_set():
+    pointer = "📊 Weekly digest refreshed → `AI Learnings/digest.html` (open your bookmark)"
+    body = compose_top_level(_empty_summary(digest_pointer=pointer))
+    assert pointer in body

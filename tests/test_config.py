@@ -93,3 +93,55 @@ def test_load_config_raises_on_duplicate_seed_categories(tmp_path):
     )
     with pytest.raises(ConfigError, match="duplicates"):
         load_config(p)
+
+
+def test_load_config_digest_defaults_when_missing(tmp_path):
+    p = tmp_path / "config.yml"
+    p.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 2\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+    )
+    cfg = load_config(p)
+    assert cfg.digest.window_days == 7
+    assert cfg.digest.vault_app_base_url == "http://localhost:3000"
+    assert cfg.digest.vault_name == "AI Learnings"
+
+
+def test_load_config_digest_overrides(tmp_path):
+    p = tmp_path / "config.yml"
+    p.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 2\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+        "digest:\n"
+        "  window_days: 14\n"
+        "  vault_app_base_url: http://localhost:4000\n"
+        "  vault_name: Other Vault\n"
+    )
+    cfg = load_config(p)
+    assert cfg.digest.window_days == 14
+    assert cfg.digest.vault_app_base_url == "http://localhost:4000"
+    assert cfg.digest.vault_name == "Other Vault"
+
+
+def test_load_config_raises_configerror_on_non_integer_digest_window_days(tmp_path):
+    p = tmp_path / "config.yml"
+    p.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 2\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+        "digest:\n"
+        "  window_days: not-a-number\n"
+    )
+    with pytest.raises(ConfigError, match="window_days"):
+        load_config(p)

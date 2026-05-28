@@ -34,6 +34,7 @@ class RunSummary:
     proposed_categories_pending: list[str]
     autopromoted_categories: list[str]
     dead_today: list[dict]
+    digest_pointer: str | None = None
 
 
 def _mb(value: int) -> str:
@@ -87,6 +88,9 @@ def compose_top_level(summary: RunSummary) -> str:
                 f"• ℹ️ `{slug}` auto-promoted to seed list after 3 uses — "
                 "edit config.yml to rename/merge if desired"
             )
+    if summary.digest_pointer:
+        lines.append("")
+        lines.append(summary.digest_pointer)
     return "\n".join(lines)
 
 
@@ -185,6 +189,7 @@ def _summary_from_log(log: dict) -> RunSummary:
         proposed_categories_pending=log.get("proposed_categories_pending", []),
         autopromoted_categories=log.get("autopromoted_categories", []),
         dead_today=log.get("dead_today", []),
+        digest_pointer=log.get("digest_pointer"),
     )
 
 
@@ -216,6 +221,7 @@ def deliver_undelivered_summaries(
             proposed_categories_pending=summary.proposed_categories_pending,
             autopromoted_categories=summary.autopromoted_categories,
             dead_today=summary.dead_today,
+            digest_pointer=summary.digest_pointer,
         )
         ok, _ = post_run_summary(client=client, channel_id=channel_id, summary=prefixed)
         if not ok:

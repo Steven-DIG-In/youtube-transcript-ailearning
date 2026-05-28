@@ -283,3 +283,80 @@ def test_run_once_heartbeat_on_empty(mocker, temp_vault, tmp_path):
     top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
     assert "📼" in top_text
     assert "0 new" in top_text
+
+
+def test_run_once_writes_digest_and_includes_pointer(mocker, temp_vault, tmp_path):
+    """run_once should call write_digest at the end and pass digest_pointer into the Slack summary."""
+    mocker.patch("src.main.self_update_ytdlp")
+    slack_client = mocker.patch("src.main.WebClient").return_value
+    slack_client.auth_test.return_value = {"user_id": "U_BOT"}
+    slack_client.chat_postMessage.return_value = {"ts": "1745.5"}
+    slack_client.conversations_history.return_value = {"messages": [], "has_more": False}
+    mocker.patch("src.main.Anthropic")
+
+    state_path = tmp_path / "state.json"
+    queue_path = tmp_path / "queue.txt"
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 10\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+        "digest:\n"
+        "  window_days: 7\n"
+        "  vault_app_base_url: http://localhost:3000\n"
+        "  vault_name: \"AI Learnings\"\n"
+    )
+
+    run_once(
+        config_path=config_path, state_path=state_path, queue_path=queue_path,
+        vault=temp_vault, slack_channel_id="C1", anthropic_api_key="x",
+        slack_bot_token="y", today="2026-05-28", now_iso="2026-05-28T10:30:00Z",
+    )
+
+    # digest.html should exist at the vault root.
+    assert (temp_vault / "digest.html").exists()
+    text = (temp_vault / "digest.html").read_text()
+    assert "AI Learnings — Last 7 Days" in text
+
+    # Slack summary should contain the digest pointer line.
+    top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
+    assert "Weekly digest refreshed" in top_text
+
+
+def test_run_once_digest_failure_does_not_break_slack_post(mocker, temp_vault, tmp_path):
+    """If write_digest raises, run_once should still post the Slack summary with a ⚠ pointer line."""
+    mocker.patch("src.main.self_update_ytdlp")
+    slack_client = mocker.patch("src.main.WebClient").return_value
+    slack_client.auth_test.return_value = {"user_id": "U_BOT"}
+    slack_client.chat_postMessage.return_value = {"ts": "1745.5"}
+    slack_client.conversations_history.return_value = {"messages": [], "has_more": False}
+    mocker.patch("src.main.Anthropic")
+    mocker.patch("src.main.write_digest", side_effect=RuntimeError("simulated digest failure"))
+
+    state_path = tmp_path / "state.json"
+    queue_path = tmp_path / "queue.txt"
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 10\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+    )
+
+    run_once(
+        config_path=config_path, state_path=state_path, queue_path=queue_path,
+        vault=temp_vault, slack_channel_id="C1", anthropic_api_key="x",
+        slack_bot_token="y", today="2026-05-28", now_iso="2026-05-28T10:30:00Z",
+    )
+
+    # Slack summary still posted.
+    assert slack_client.chat_postMessage.called
+    top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
+    assert "⚠ Digest generation failed" in top_text
+    # State file still saved.
+    assert state_path.exists()
