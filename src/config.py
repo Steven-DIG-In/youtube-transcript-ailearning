@@ -92,11 +92,14 @@ def load_config(path: Path) -> Config:
     digest_raw = data.get("digest") or {}
     if not isinstance(digest_raw, dict):
         raise ConfigError("config.yml 'digest' must be a mapping")
-    digest = DigestConfig(
-        window_days=int(digest_raw.get("window_days", 7)),
-        vault_app_base_url=str(digest_raw.get("vault_app_base_url", "http://localhost:3000")),
-        vault_name=str(digest_raw.get("vault_name", "AI Learnings")),
-    )
+    try:
+        digest = DigestConfig(
+            window_days=int(digest_raw.get("window_days", 7)),
+            vault_app_base_url=str(digest_raw.get("vault_app_base_url", "http://localhost:3000")),
+            vault_name=str(digest_raw.get("vault_name", "AI Learnings")),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"config.yml 'digest.window_days' must be an integer: {exc}") from exc
     return Config(
         watchlist=watchlist,
         seed_categories=seed_categories,

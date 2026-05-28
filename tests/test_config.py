@@ -129,3 +129,19 @@ def test_load_config_digest_overrides(tmp_path):
     assert cfg.digest.window_days == 14
     assert cfg.digest.vault_app_base_url == "http://localhost:4000"
     assert cfg.digest.vault_name == "Other Vault"
+
+
+def test_load_config_raises_configerror_on_non_integer_digest_window_days(tmp_path):
+    p = tmp_path / "config.yml"
+    p.write_text(
+        "watchlist: []\n"
+        "seed_categories: []\n"
+        "ingest:\n"
+        "  max_videos_per_run: 2\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+        "digest:\n"
+        "  window_days: not-a-number\n"
+    )
+    with pytest.raises(ConfigError, match="window_days"):
+        load_config(p)
