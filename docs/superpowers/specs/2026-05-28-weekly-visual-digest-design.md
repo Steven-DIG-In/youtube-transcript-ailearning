@@ -185,7 +185,7 @@ All HTML rendering is plain f-strings + a small list of helpers; no template eng
 
 ## 13. Integration with `main.run_once`
 
-After `save_state(state_path, state)` at the end of `run_once`, wrap the digest call in try/except so failures don't break the run:
+Just before constructing the `RunSummary` at the end of `run_once` (so the pointer can travel with it to Slack), wrap the digest call in try/except. Failures must never block summary delivery or state save:
 
 ```python
 try:
