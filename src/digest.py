@@ -10,6 +10,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from html import escape as _esc
 from pathlib import Path
 from urllib.parse import quote
 
@@ -315,3 +316,194 @@ def build_episode_card(
         watch_url=page.video_url,
         read_in_vault_url=deep_link,
     )
+
+
+_DIGEST_CSS = """
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:#0a0c10; color:#c7cbd6; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.5; padding:32px; }
+.wrap { max-width:1040px; margin:0 auto; }
+.top { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:1px solid #20242e; padding-bottom:18px; margin-bottom:24px; }
+.top .h { font-size:1.6rem; font-weight:800; color:#fff; }
+.top .sub { font-size:.8rem; color:#8b90a0; margin-top:4px; }
+.openvault { font-size:.78rem; font-weight:600; padding:9px 15px; border-radius:9px; background:#1b2533; color:#9fc0ff; border:1px solid #2b3140; text-decoration:none; }
+.band { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-bottom:14px; }
+.panel { background:#0f1115; border:1px solid #20242e; border-radius:14px; padding:16px; }
+.panel .lab { font-size:.62rem; text-transform:uppercase; letter-spacing:.06em; color:#8b90a0; margin-bottom:12px; }
+.stat-row { display:flex; gap:10px; }
+.stat { flex:1; background:#171a21; border-radius:10px; padding:12px 8px; text-align:center; }
+.stat .n { font-size:1.5rem; font-weight:700; color:#e8eaf0; line-height:1; }
+.stat .l { font-size:.58rem; text-transform:uppercase; letter-spacing:.04em; color:#8b90a0; margin-top:6px; }
+.bar-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:.7rem; }
+.bar-row .name { width:130px; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#c7cbd6; }
+.bar-track { flex:1; height:13px; background:#171a21; border-radius:7px; overflow:hidden; }
+.bar-fill { height:100%; background:linear-gradient(90deg,#5b8cff,#7c5bff); border-radius:7px; }
+.bar-row .v { width:24px; color:#8b90a0; text-align:right; }
+.spark { display:flex; align-items:flex-end; gap:6px; height:58px; margin-top:6px; }
+.spark .col { flex:1; background:linear-gradient(180deg,#7c5bff,#5b8cff); border-radius:4px 4px 0 0; min-height:4px; position:relative; }
+.spark .col span { position:absolute; bottom:-15px; left:0; right:0; text-align:center; font-size:.55rem; color:#8b90a0; }
+.tool-row { display:flex; justify-content:space-between; font-size:.72rem; padding:4px 0; border-bottom:1px solid #20242e; }
+.tool-row:last-child { border:none; }
+.tool-row .c { color:#7c5bff; font-weight:600; }
+.section-lab { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:#8b90a0; margin:18px 0 14px; }
+.ep { background:#0f1115; border:1px solid #20242e; border-radius:14px; padding:20px; position:relative; margin-bottom:16px; }
+.ep .hook { position:absolute; top:20px; right:22px; text-align:right; }
+.ep .hook .big { font-size:2.6rem; font-weight:800; color:#fff; line-height:1; }
+.ep .hook small { display:block; font-size:.58rem; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:#8b90a0; margin-top:4px; }
+.chiprow { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.chip { font-size:.6rem; text-transform:uppercase; letter-spacing:.04em; padding:3px 8px; border-radius:999px; background:#1b2533; color:#7fa8ff; }
+.chip.dur { background:#241b33; color:#b78fff; }
+.ep h3 { font-size:1.28rem; color:#e8eaf0; margin:.1rem 0 .2rem; max-width:74%; line-height:1.2; }
+.ep .creator { font-size:.74rem; color:#8b90a0; margin-bottom:14px; }
+.take { font-size:.82rem; margin:6px 0; padding-left:18px; position:relative; }
+.take:before { content:"▸"; position:absolute; left:0; color:#7c5bff; }
+.step { display:flex; gap:10px; align-items:flex-start; margin:7px 0; font-size:.82rem; }
+.step .num { flex-shrink:0; width:21px; height:21px; border-radius:50%; background:#7c5bff; color:#fff; font-size:.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; }
+.tools { display:flex; gap:6px; flex-wrap:wrap; margin-top:14px; }
+.tool { font-size:.68rem; padding:3px 9px; border:1px solid #2b3140; border-radius:7px; color:#c7cbd6; }
+.btns { display:flex; gap:10px; margin-top:16px; }
+.btn { font-size:.74rem; font-weight:600; padding:8px 14px; border-radius:8px; text-decoration:none; }
+.btn.watch { background:#7c5bff; color:#fff; }
+.btn.read { background:#1b2533; color:#9fc0ff; border:1px solid #2b3140; }
+.empty { text-align:center; padding:48px 0; color:#5a5f6e; font-style:italic; }
+.foot { text-align:center; font-size:.68rem; color:#5a5f6e; margin-top:24px; }
+"""
+
+
+def _render_stat(n: object, label: str) -> str:
+    return f'<div class="stat"><div class="n">{_esc(str(n))}</div><div class="l">{_esc(label)}</div></div>'
+
+
+def _render_bar_row(name: str, value: int, max_value: int) -> str:
+    pct = (value / max_value * 100) if max_value else 0
+    return (
+        f'<div class="bar-row"><div class="name">{_esc(name)}</div>'
+        f'<div class="bar-track"><div class="bar-fill" style="width:{pct:.0f}%"></div></div>'
+        f'<div class="v">{value}</div></div>'
+    )
+
+
+def _render_card(card: EpisodeCard) -> str:
+    chips = "".join(f'<span class="chip">{_esc(c)}</span>' for c in card.categories)
+    chips += f'<span class="chip dur">{card.duration_minutes} min</span>'
+    if card.body_mode == "steps":
+        body_html = "".join(
+            f'<div class="step"><div class="num">{i+1}</div><div>{_esc(item)}</div></div>'
+            for i, item in enumerate(card.body_items)
+        )
+    else:
+        body_html = "".join(f'<div class="take">{_esc(item)}</div>' for item in card.body_items)
+    tool_html = "".join(f'<span class="tool">{_esc(t)}</span>' for t in card.tools)
+    tools_block = f'<div class="tools">{tool_html}</div>' if card.tools else ""
+    return (
+        '<div class="ep">'
+        f'<div class="hook"><div class="big">{card.duration_minutes}</div><small>minutes</small></div>'
+        f'<div class="chiprow">{chips}</div>'
+        f'<h3>{_esc(card.title)}</h3>'
+        f'<div class="creator">{_esc(card.creator)} · {_esc(card.published_at)}</div>'
+        f'{body_html}'
+        f'{tools_block}'
+        '<div class="btns">'
+        f'<a class="btn watch" href="{_esc(card.watch_url)}">▶ Watch</a>'
+        f'<a class="btn read" href="{_esc(card.read_in_vault_url)}">📖 Read in vault</a>'
+        '</div></div>'
+    )
+
+
+def render_digest_html(
+    *,
+    aggregates: Aggregates,
+    cards: list[EpisodeCard],
+    generated_at: datetime,
+    window_start: datetime,
+    window_end: datetime,
+    vault_app_base_url: str,
+    vault_name: str,
+) -> str:
+    # Stat band
+    stat_html = (
+        _render_stat(aggregates.video_count, "Videos")
+        + _render_stat(aggregates.creator_count, "Creators")
+        + _render_stat(aggregates.tool_count, "Tools")
+        + _render_stat(f"${aggregates.spend_usd:.2f}", "Spend")
+    )
+
+    # Top categories
+    max_cat = max((c for _, c in aggregates.top_categories), default=0)
+    cat_html = "".join(
+        _render_bar_row(slug, count, max_cat) for slug, count in aggregates.top_categories
+    ) or '<div class="bar-row"><div class="name">—</div></div>'
+
+    # Volume per day
+    max_vol = max((c for _, c in aggregates.volume_per_day), default=0) or 1
+    cols = "".join(
+        f'<div class="col" style="height:{(c / max_vol * 100):.0f}%"><span>{_esc(d)}</span></div>'
+        for d, c in aggregates.volume_per_day
+    )
+
+    # Top tools
+    tools_html = "".join(
+        f'<div class="tool-row"><span>{_esc(name)}</span><span class="c">×{count}</span></div>'
+        for name, count in aggregates.top_tools
+    ) or '<div class="tool-row"><span>—</span><span class="c"></span></div>'
+
+    # Gallery
+    if cards:
+        gallery_lab = f'<div class="section-lab">{len(cards)} episode{"s" if len(cards) != 1 else ""} · newest first</div>'
+        gallery_html = "".join(_render_card(c) for c in cards)
+    else:
+        gallery_lab = ""
+        gallery_html = '<div class="empty">No videos in the last 7 days.</div>'
+
+    # Header
+    open_vault_url = f"{vault_app_base_url.rstrip('/')}/browse?vault={quote(vault_name)}"
+    date_range = (
+        f"{window_start.astimezone().strftime('%-d %b')}–"
+        f"{window_end.astimezone().strftime('%-d %b %Y')}"
+    )
+    gen_label = generated_at.astimezone().strftime("%-d %b %H:%M")
+    sub = (
+        f"{_esc(date_range)} · {aggregates.video_count} videos · "
+        f"{aggregates.creator_count} creators · generated {_esc(gen_label)}"
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Learnings — Last 7 Days</title>
+<style>{_DIGEST_CSS}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="h">AI Learnings — Last 7 Days</div>
+      <div class="sub">{sub}</div>
+    </div>
+    <a class="openvault" href="{_esc(open_vault_url)}">⤢ Open vault</a>
+  </div>
+
+  <div class="band">
+    <div class="panel">
+      <div class="lab">This week</div>
+      <div class="stat-row">{stat_html}</div>
+      <div class="lab" style="margin-top:18px;">Top categories</div>
+      {cat_html}
+    </div>
+    <div class="panel">
+      <div class="lab">Volume per day</div>
+      <div class="spark">{cols}</div>
+      <div class="lab" style="margin-top:26px;">Top tools mentioned</div>
+      {tools_html}
+    </div>
+  </div>
+
+  {gallery_lab}
+  {gallery_html}
+
+  <div class="foot">Generated by youtube-transcript-ailearning · src/digest.py · self-contained, offline-friendly</div>
+</div>
+</body>
+</html>
+"""

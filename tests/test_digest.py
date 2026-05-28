@@ -7,7 +7,7 @@ import pytest
 
 from urllib.parse import quote
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates, build_episode_card, EpisodeCard
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates, build_episode_card, EpisodeCard, render_digest_html
 from src.write import write_source_page, upsert_resources_index
 
 
@@ -360,3 +360,87 @@ def test_build_episode_card_interview_uses_takeaways():
     assert card.body_mode == "takeaways"
     assert card.body_items == ["alpha", "beta", "gamma", "delta"]   # cap at 4
     assert card.duration_minutes == 62
+
+
+def _card(title="Sample", mode="takeaways"):
+    return EpisodeCard(
+        title=title, creator="creator-a", published_at="2026-05-27",
+        duration_minutes=12, categories=["agent-engineering"],
+        body_mode=mode,
+        body_items=["one", "two"],
+        tools=["n8n"],
+        watch_url="https://www.youtube.com/watch?v=abc",
+        read_in_vault_url="http://localhost:3000/browse?vault=AI%20Learnings&page=c-a--s",
+    )
+
+
+def _agg(video_count=1):
+    return Aggregates(
+        video_count=video_count, creator_count=1, tool_count=1, spend_usd=0.12,
+        top_categories=[("agent-engineering", 2)],
+        volume_per_day=[("Wed", 0), ("Thu", 0), ("Fri", 0), ("Sat", 0),
+                        ("Sun", 0), ("Mon", 0), ("Tue", 1)],
+        top_tools=[("n8n", 1)],
+    )
+
+
+def test_render_digest_html_contains_expected_sections():
+    html = render_digest_html(
+        aggregates=_agg(), cards=[_card()],
+        generated_at=datetime(2026, 5, 28, 10, 30, tzinfo=timezone.utc),
+        window_start=datetime(2026, 5, 21, tzinfo=timezone.utc),
+        window_end=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+    assert "<!DOCTYPE html>" in html
+    assert "AI Learnings — Last 7 Days" in html
+    assert "Videos" in html and "Creators" in html and "Tools" in html and "Spend" in html
+    assert "agent-engineering" in html
+    assert "Volume per day" in html
+    assert "Top tools mentioned" in html
+    assert "Sample" in html                       # card title
+    assert "▶ Watch" in html
+    assert "📖 Read in vault" in html
+    assert "Open vault" in html
+    assert "http://localhost:3000/browse?vault=AI%20Learnings" in html
+
+
+def test_render_digest_html_empty_state():
+    html = render_digest_html(
+        aggregates=_agg(video_count=0), cards=[],
+        generated_at=datetime(2026, 5, 28, 10, 30, tzinfo=timezone.utc),
+        window_start=datetime(2026, 5, 21, tzinfo=timezone.utc),
+        window_end=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+    assert "No videos in the last 7 days" in html
+
+
+def test_render_digest_html_escapes_titles():
+    html = render_digest_html(
+        aggregates=_agg(), cards=[_card(title="<script>x</script>")],
+        generated_at=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        window_start=datetime(2026, 5, 21, tzinfo=timezone.utc),
+        window_end=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+    assert "<script>x</script>" not in html
+    assert "&lt;script&gt;x&lt;/script&gt;" in html
+
+
+def test_render_digest_html_has_no_external_resources():
+    html = render_digest_html(
+        aggregates=_agg(), cards=[_card()],
+        generated_at=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        window_start=datetime(2026, 5, 21, tzinfo=timezone.utc),
+        window_end=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+    # No <script> tags at all.
+    assert "<script" not in html.lower()
+    # No external stylesheets / fonts.
+    assert "<link" not in html.lower()
+    # No CDN fetches in <img> tags.
+    import re as _re
+    for m in _re.finditer(r"<img[^>]*\ssrc=\"([^\"]+)\"", html):
+        assert m.group(1).startswith("data:")
