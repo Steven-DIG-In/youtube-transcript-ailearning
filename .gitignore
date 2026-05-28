@@ -10,3 +10,4 @@ tests/fixtures/_scratch/
 .venv/
 *.egg-info/
 .DS_Store
+.superpowers/
