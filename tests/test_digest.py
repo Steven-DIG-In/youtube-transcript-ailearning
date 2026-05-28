@@ -288,7 +288,10 @@ def test_compute_aggregates_counts_and_ranks():
     assert ("ai-agency-business", 1) in agg.top_categories
     assert agg.top_tools[0] == ("n8n", 2)
     assert len(agg.volume_per_day) == 7
-    # Ingest on 2026-05-27 lands in the last slot (newest = window_end day = now's date).
-    assert agg.volume_per_day[-1][1] == 2
-    # 2026-05-25 lands two slots earlier.
-    assert agg.volume_per_day[-3][1] == 1
+    # With now=2026-05-28 and window_days=7, the slots are dates
+    # 2026-05-22 .. 2026-05-28 (last slot = today, count 0).
+    # Ingests on 2026-05-27 → second-to-last slot (count 2).
+    # Ingest on 2026-05-25 → fourth-from-last slot (count 1).
+    assert agg.volume_per_day[-1][1] == 0           # 2026-05-28 (today, no ingests)
+    assert agg.volume_per_day[-2][1] == 2           # 2026-05-27
+    assert agg.volume_per_day[-4][1] == 1           # 2026-05-25

@@ -254,8 +254,10 @@ def compute_aggregates(
     for p in pages:
         cat_counter.update(p.categories)
 
-    # Volume per day: window_days slots, oldest first, newest = yesterday's date (incomplete today excluded).
-    end_day = (now - timedelta(days=1)).date()
+    # Volume per day: window_days slots, oldest first, newest = now's UTC date.
+    # Today's ingests (from this run) DO belong in the last slot — the pipeline
+    # runs at 10:30 and the digest renders right after, so "today" is meaningful.
+    end_day = now.date()
     days = [end_day - timedelta(days=i) for i in range(window_days - 1, -1, -1)]
     per_day: dict = {d: 0 for d in days}
     for r in ingests:
