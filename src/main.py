@@ -25,6 +25,7 @@ from src.slack_queue import (
     read_pending_urls,
     resolve_bot_user_id,
 )
+from src.digest import write_digest
 from src.state import load_state, mark_ingested, record_failure, record_proposed_category, save_state
 from src.write import (
     append_index_entries,
@@ -430,6 +431,24 @@ def run_once(
     for slug in newly_autopromoted:
         state["proposed_categories"][slug]["status"] = "announced"
 
+    try:
+        write_digest(
+            vault=vault,
+            state=state,
+            now=now,
+            window_days=cfg.digest.window_days,
+            vault_app_base_url=cfg.digest.vault_app_base_url,
+            vault_name=cfg.digest.vault_name,
+            usage_csv_path=log_dir / "usage.csv",
+        )
+        digest_pointer = (
+            "📊 Weekly digest refreshed → "
+            f"`{cfg.digest.vault_name}/digest.html` (open your bookmark)"
+        )
+    except Exception as exc:
+        logger.exception("digest generation failed")
+        digest_pointer = f"⚠ Digest generation failed: {type(exc).__name__}"
+
     summary = RunSummary(
         run_date=now.strftime("%Y-%m-%d %H:%M"),
         ingested=ingested, skipped=skipped, failed=failed,
@@ -438,6 +457,7 @@ def run_once(
         proposed_categories_pending=pending_categories,
         autopromoted_categories=newly_autopromoted,
         dead_today=dead_today,
+        digest_pointer=digest_pointer,
     )
     ok, _ = post_run_summary(
         client=slack_client, channel_id=slack_channel_id, summary=summary,
