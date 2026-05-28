@@ -7,7 +7,7 @@ import pytest
 
 from urllib.parse import quote
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates, build_episode_card, EpisodeCard, render_digest_html
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates, build_episode_card, EpisodeCard, render_digest_html, write_digest
 from src.write import write_source_page, upsert_resources_index
 
 
@@ -444,3 +444,105 @@ def test_render_digest_html_has_no_external_resources():
     import re as _re
     for m in _re.finditer(r"<img[^>]*\ssrc=\"([^\"]+)\"", html):
         assert m.group(1).startswith("data:")
+
+
+def _vault_with_one_video(tmp_path, video_id="vidA", ingested_at="2026-05-27T08:30:00Z"):
+    write_source_page(
+        vault=tmp_path,
+        fetch={
+            "video_id": video_id,
+            "title": "Build a Site in 17 Minutes",
+            "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
+            "channel": "Nick Saraev",
+            "channel_url": "https://www.youtube.com/@nicksaraev",
+            "channel_id": "UCxyz",
+            "duration_seconds": 1020,
+            "published_at": "2026-05-24",
+        },
+        extraction={
+            "session_summary": "Walkthrough.",
+            "instructions_and_howto": "1. Spec.\n2. Scaffold.\n3. Deploy.\n",
+            "resources": [
+                {"url": "https://claude.ai/code", "title": "Claude Code",
+                 "description": "agentic CLI", "group": "Tools"},
+            ],
+            "key_takeaways": ["x", "y"],
+            "categories": ["building-websites"],
+            "proposed_new_categories": [],
+            "tags": [],
+            "domain": "workflow",
+            "creator_bio_additions": "",
+            "connections": [],
+        },
+        creator_slug="creator-nick-saraev",
+        date_ingested="2026-05-24",
+    )
+    upsert_resources_index(
+        vault=tmp_path,
+        resources=[{"url": "https://claude.ai/code", "title": "Claude Code",
+                    "description": "agentic CLI", "group": "Tools"}],
+        source_slug="creator-nick-saraev--build-a-site-in-17-minutes",
+        today="2026-05-27",
+    )
+    state = {
+        "ingested_video_ids": {
+            video_id: {
+                "creator_slug": "creator-nick-saraev",
+                "ingested_at": ingested_at,
+                "source_page": "wiki/sources/creator-nick-saraev--build-a-site-in-17-minutes.md",
+            }
+        }
+    }
+    return state
+
+
+def test_write_digest_writes_html_with_card(tmp_path):
+    state = _vault_with_one_video(tmp_path)
+    out = write_digest(
+        vault=tmp_path, state=state,
+        now=datetime(2026, 5, 28, 10, 30, tzinfo=timezone.utc),
+        window_days=7,
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+        usage_csv_path=tmp_path / "usage.csv",   # missing OK
+    )
+
+    assert out == tmp_path / "digest.html"
+    text = out.read_text()
+    assert "Build a Site in 17 Minutes" in text
+    assert "Claude Code" in text
+    assert "▶ Watch" in text
+
+
+def test_write_digest_empty_window_writes_empty_state(tmp_path):
+    state = {"ingested_video_ids": {}}
+    out = write_digest(
+        vault=tmp_path, state=state,
+        now=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        window_days=7,
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+        usage_csv_path=tmp_path / "usage.csv",
+    )
+    assert out.exists()
+    assert "No videos in the last 7 days" in out.read_text()
+
+
+def test_write_digest_skips_missing_source_pages(tmp_path, caplog):
+    state = {
+        "ingested_video_ids": {
+            "ghost": {
+                "creator_slug": "c-x",
+                "ingested_at": "2026-05-27T08:30:00Z",
+                "source_page": "wiki/sources/c-x--missing.md",
+            }
+        }
+    }
+    out = write_digest(
+        vault=tmp_path, state=state,
+        now=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        window_days=7,
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+        usage_csv_path=tmp_path / "usage.csv",
+    )
+    # No crash; empty-state HTML written; warning recorded.
+    assert out.exists()
+    assert "No videos in the last 7 days" in out.read_text()

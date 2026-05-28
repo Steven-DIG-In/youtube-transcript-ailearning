@@ -6,7 +6,10 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 from __future__ import annotations
 
 import csv
+import logging
+import os
 import re
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -17,6 +20,8 @@ from urllib.parse import quote
 import yaml
 
 from src.write import _parse_resources_index
+
+logger = logging.getLogger(__name__)
 
 
 SONNET_INPUT_USD_PER_MTOK = 3.00
@@ -507,3 +512,74 @@ def render_digest_html(
 </body>
 </html>
 """
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=path.parent, text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def write_digest(
+    *,
+    vault: Path,
+    state: dict,
+    now: datetime,
+    window_days: int,
+    vault_app_base_url: str,
+    vault_name: str,
+    usage_csv_path: Path,
+) -> Path:
+    refs = select_recent_ingests(state, vault=vault, now=now, window_days=window_days)
+
+    pages: list[SourcePage] = []
+    kept_refs: list[IngestRef] = []
+    for ref in refs:
+        if not ref.source_page_path.exists():
+            logger.warning("digest: source page missing, skipping: %s", ref.source_page_path)
+            continue
+        try:
+            pages.append(parse_source_page(ref.source_page_path))
+            kept_refs.append(ref)
+        except Exception as exc:
+            logger.warning("digest: failed to parse %s: %s", ref.source_page_path, exc)
+
+    slugs = [p.slug for p in pages]
+    index_path = vault / "wiki" / "sources" / "resources-index.md"
+    tools_by_slug = tools_for_sources(index_path, slugs=slugs)
+
+    window_start = now - timedelta(days=window_days)
+    spend = compute_spend(usage_csv_path, window_start=window_start, window_end=now)
+
+    aggregates = compute_aggregates(
+        pages=pages, ingests=kept_refs, tools_by_slug=tools_by_slug,
+        spend_usd=spend, now=now, window_days=window_days,
+    )
+
+    cards = [
+        build_episode_card(
+            page=page, ingest=ref, tools=tools_by_slug.get(page.slug, []),
+            vault_app_base_url=vault_app_base_url, vault_name=vault_name,
+        )
+        for page, ref in zip(pages, kept_refs)
+    ]
+
+    html = render_digest_html(
+        aggregates=aggregates, cards=cards,
+        generated_at=now,
+        window_start=window_start, window_end=now,
+        vault_app_base_url=vault_app_base_url, vault_name=vault_name,
+    )
+
+    out = vault / "digest.html"
+    _atomic_write(out, html)
+    return out
