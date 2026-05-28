@@ -221,6 +221,7 @@ def deliver_undelivered_summaries(
             proposed_categories_pending=summary.proposed_categories_pending,
             autopromoted_categories=summary.autopromoted_categories,
             dead_today=summary.dead_today,
+            digest_pointer=summary.digest_pointer,
         )
         ok, _ = post_run_summary(client=client, channel_id=channel_id, summary=prefixed)
         if not ok:
