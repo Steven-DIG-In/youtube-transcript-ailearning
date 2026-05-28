@@ -471,6 +471,7 @@ def _log_summary_for_retry(summary: RunSummary, log_path: Path, state: dict) -> 
         "proposed_categories_pending": summary.proposed_categories_pending,
         "autopromoted_categories": summary.autopromoted_categories,
         "dead_today": summary.dead_today,
+        "digest_pointer": summary.digest_pointer,
     }
     log_path.write_text(json.dumps(payload))
     state["undelivered_summaries"].append({
