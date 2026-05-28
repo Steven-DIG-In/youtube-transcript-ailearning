@@ -31,3 +31,8 @@ ingest:
   max_videos_per_run: 2
   lookback_days: 14
   min_duration_seconds: 60
+
+digest:
+  window_days: 7
+  vault_app_base_url: http://localhost:3000
+  vault_name: "AI Learnings"
