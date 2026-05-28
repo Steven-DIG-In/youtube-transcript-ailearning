@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend
 from src.write import write_source_page, upsert_resources_index
 
 
@@ -204,3 +204,41 @@ def test_top_tools_ranks_by_frequency():
 def test_tools_for_sources_returns_empty_when_index_missing(tmp_path):
     missing = tmp_path / "does-not-exist.md"
     assert tools_for_sources(missing, slugs=["x"]) == {"x": []}
+
+
+def test_compute_spend_sums_window_only(tmp_path):
+    csv_path = tmp_path / "usage.csv"
+    csv_path.write_text(
+        "ts,model,attempt,input_tokens,output_tokens,"
+        "cache_creation_input_tokens,cache_read_input_tokens\n"
+        # inside window
+        "2026-05-27T08:30:00Z,claude-sonnet-4-6,1,20000,2000,0,0\n"
+        "2026-05-28T08:30:00Z,claude-sonnet-4-6,1,10000,1000,0,0\n"
+        # outside window
+        "2026-05-10T08:30:00Z,claude-sonnet-4-6,1,9000000,9000000,0,0\n"
+    )
+    window_start = datetime(2026, 5, 21, tzinfo=timezone.utc)
+    window_end = datetime(2026, 5, 28, 23, 59, 59, tzinfo=timezone.utc)
+
+    spend = compute_spend(csv_path, window_start=window_start, window_end=window_end)
+
+    # 30K input @ $3/Mtok = $0.09; 3K output @ $15/Mtok = $0.045 → $0.135
+    assert spend == pytest.approx(0.135, rel=1e-3)
+
+
+def test_compute_spend_returns_zero_when_csv_missing(tmp_path):
+    missing = tmp_path / "absent.csv"
+    assert compute_spend(missing,
+                         window_start=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                         window_end=datetime(2026, 5, 28, tzinfo=timezone.utc)) == 0.0
+
+
+def test_compute_spend_returns_zero_when_csv_empty(tmp_path):
+    csv_path = tmp_path / "usage.csv"
+    csv_path.write_text(
+        "ts,model,attempt,input_tokens,output_tokens,"
+        "cache_creation_input_tokens,cache_read_input_tokens\n"
+    )
+    assert compute_spend(csv_path,
+                         window_start=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                         window_end=datetime(2026, 5, 28, tzinfo=timezone.utc)) == 0.0

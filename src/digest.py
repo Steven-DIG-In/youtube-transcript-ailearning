@@ -5,6 +5,7 @@ then writes a self-contained HTML file at vault/digest.html. No LLM calls.
 """
 from __future__ import annotations
 
+import csv
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -199,3 +200,36 @@ def top_tools(
     for tools in tools_by_slug.values():
         counter.update(tools)
     return counter.most_common(k)
+
+
+def compute_spend(
+    usage_csv_path: Path,
+    *,
+    window_start: datetime,
+    window_end: datetime,
+) -> float:
+    if not usage_csv_path.exists():
+        return 0.0
+    total = 0.0
+    with usage_csv_path.open() as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            ts_raw = row.get("ts")
+            if not ts_raw:
+                continue
+            try:
+                ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts < window_start or ts > window_end:
+                continue
+            try:
+                inp = int(row.get("input_tokens") or 0)
+                out = int(row.get("output_tokens") or 0)
+            except ValueError:
+                continue
+            total += inp / 1_000_000 * SONNET_INPUT_USD_PER_MTOK
+            total += out / 1_000_000 * SONNET_OUTPUT_USD_PER_MTOK
+    return round(total, 4)
