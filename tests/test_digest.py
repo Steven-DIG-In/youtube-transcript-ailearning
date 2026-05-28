@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates
+from urllib.parse import quote
+
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates, build_episode_card, EpisodeCard
 from src.write import write_source_page, upsert_resources_index
 
 
@@ -295,3 +297,66 @@ def test_compute_aggregates_counts_and_ranks():
     assert agg.volume_per_day[-1][1] == 0           # 2026-05-28 (today, no ingests)
     assert agg.volume_per_day[-2][1] == 2           # 2026-05-27
     assert agg.volume_per_day[-4][1] == 1           # 2026-05-25
+
+
+def test_build_episode_card_tutorial_uses_steps():
+    page = SourcePage(
+        slug="c-a--build-site",
+        title="Build a Site in 17 Minutes",
+        video_url="https://www.youtube.com/watch?v=abc",
+        creator="creator-a",
+        published_at="2026-05-24",
+        duration_seconds=1020,
+        categories=["building-websites"],
+        domain="workflow",
+        tags=[],
+        session_summary="",
+        instructions_md="1. Write spec.\n2. Scaffold.\n3. Deploy preview.\n",
+        key_takeaways=["takeaway one", "takeaway two", "takeaway three"],
+    )
+    ingest = IngestRef("vid", "creator-a", page.slug, Path("/tmp/x.md"),
+                       datetime(2026, 5, 27, tzinfo=timezone.utc))
+
+    card = build_episode_card(
+        page=page, ingest=ingest, tools=["Claude Code", "Vercel"],
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+
+    assert card.body_mode == "steps"
+    assert card.body_items == ["Write spec.", "Scaffold.", "Deploy preview."]
+    assert card.duration_minutes == 17
+    assert card.watch_url == "https://www.youtube.com/watch?v=abc"
+    assert card.read_in_vault_url == (
+        f"http://localhost:3000/browse"
+        f"?vault={quote('AI Learnings')}&page={quote(page.slug)}"
+    )
+    assert card.tools == ["Claude Code", "Vercel"]
+    assert card.categories == ["building-websites"]
+
+
+def test_build_episode_card_interview_uses_takeaways():
+    page = SourcePage(
+        slug="c-b--interview",
+        title="A Discussion About Orgs",
+        video_url="https://www.youtube.com/watch?v=xyz",
+        creator="creator-b",
+        published_at="2026-05-26",
+        duration_seconds=3709,
+        categories=["future-trends"],
+        domain="workflow",
+        tags=[],
+        session_summary="",
+        instructions_md="This is prose without numbered steps.",
+        key_takeaways=["alpha", "beta", "gamma", "delta", "epsilon"],
+    )
+    ingest = IngestRef("v", "creator-b", page.slug, Path("/tmp/y.md"),
+                       datetime(2026, 5, 27, tzinfo=timezone.utc))
+
+    card = build_episode_card(
+        page=page, ingest=ingest, tools=[],
+        vault_app_base_url="http://localhost:3000", vault_name="AI Learnings",
+    )
+
+    assert card.body_mode == "takeaways"
+    assert card.body_items == ["alpha", "beta", "gamma", "delta"]   # cap at 4
+    assert card.duration_minutes == 62

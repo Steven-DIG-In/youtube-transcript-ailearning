@@ -11,6 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 
@@ -274,4 +275,43 @@ def compute_aggregates(
         top_categories=cat_counter.most_common(5),
         volume_per_day=volume,
         top_tools=top_tools(tools_by_slug, k=5),
+    )
+
+
+_BODY_CAP = 4
+_TOOL_CAP = 6
+
+
+def build_episode_card(
+    *,
+    page: SourcePage,
+    ingest: IngestRef,
+    tools: list[str],
+    vault_app_base_url: str,
+    vault_name: str,
+) -> EpisodeCard:
+    steps = detect_steps(page.instructions_md)
+    if steps is not None:
+        body_mode = "steps"
+        body_items = steps[:_BODY_CAP]
+    else:
+        body_mode = "takeaways"
+        body_items = page.key_takeaways[:_BODY_CAP]
+
+    deep_link = (
+        f"{vault_app_base_url.rstrip('/')}/browse"
+        f"?vault={quote(vault_name)}&page={quote(page.slug)}"
+    )
+
+    return EpisodeCard(
+        title=page.title,
+        creator=page.creator,
+        published_at=page.published_at,
+        duration_minutes=round(page.duration_seconds / 60),
+        categories=list(page.categories),
+        body_mode=body_mode,
+        body_items=body_items,
+        tools=list(tools[:_TOOL_CAP]),
+        watch_url=page.video_url,
+        read_in_vault_url=deep_link,
     )
