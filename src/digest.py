@@ -233,3 +233,43 @@ def compute_spend(
             total += inp / 1_000_000 * SONNET_INPUT_USD_PER_MTOK
             total += out / 1_000_000 * SONNET_OUTPUT_USD_PER_MTOK
     return round(total, 4)
+
+
+_WEEKDAY_ABBR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def compute_aggregates(
+    *,
+    pages: list[SourcePage],
+    ingests: list[IngestRef],
+    tools_by_slug: dict[str, list[str]],
+    spend_usd: float,
+    now: datetime,
+    window_days: int,
+) -> Aggregates:
+    creators = {p.creator for p in pages}
+    all_tools = {t for ts in tools_by_slug.values() for t in ts}
+
+    cat_counter: Counter[str] = Counter()
+    for p in pages:
+        cat_counter.update(p.categories)
+
+    # Volume per day: window_days slots, oldest first, newest = yesterday's date (incomplete today excluded).
+    end_day = (now - timedelta(days=1)).date()
+    days = [end_day - timedelta(days=i) for i in range(window_days - 1, -1, -1)]
+    per_day: dict = {d: 0 for d in days}
+    for r in ingests:
+        d = r.ingested_at.date()
+        if d in per_day:
+            per_day[d] += 1
+    volume = [(_WEEKDAY_ABBR[d.weekday()], per_day[d]) for d in days]
+
+    return Aggregates(
+        video_count=len(ingests),
+        creator_count=len(creators),
+        tool_count=len(all_tools),
+        spend_usd=spend_usd,
+        top_categories=cat_counter.most_common(5),
+        volume_per_day=volume,
+        top_tools=top_tools(tools_by_slug, k=5),
+    )

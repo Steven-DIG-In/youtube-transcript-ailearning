@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps, tools_for_sources, top_tools, compute_spend, Aggregates, compute_aggregates
 from src.write import write_source_page, upsert_resources_index
 
 
@@ -242,3 +242,53 @@ def test_compute_spend_returns_zero_when_csv_empty(tmp_path):
     assert compute_spend(csv_path,
                          window_start=datetime(2026, 5, 1, tzinfo=timezone.utc),
                          window_end=datetime(2026, 5, 28, tzinfo=timezone.utc)) == 0.0
+
+
+def _page(slug, cats, creator="creator-x"):
+    return SourcePage(
+        slug=slug, title=f"T:{slug}", video_url="https://yt", creator=creator,
+        published_at="2026-05-26", duration_seconds=600, categories=list(cats),
+        domain="workflow", tags=[], session_summary="", instructions_md="",
+        key_takeaways=[],
+    )
+
+
+def test_compute_aggregates_counts_and_ranks():
+    now = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
+    refs = [
+        IngestRef("v1", "c-a", "c-a--v1", Path("/tmp/a.md"),
+                  datetime(2026, 5, 27, 9, 0, tzinfo=timezone.utc)),
+        IngestRef("v2", "c-a", "c-a--v2", Path("/tmp/b.md"),
+                  datetime(2026, 5, 27, 10, 0, tzinfo=timezone.utc)),
+        IngestRef("v3", "c-b", "c-b--v3", Path("/tmp/c.md"),
+                  datetime(2026, 5, 25, 9, 0, tzinfo=timezone.utc)),
+    ]
+    pages = [
+        _page("c-a--v1", ["agent-engineering", "claude-code-workflows"], creator="c-a"),
+        _page("c-a--v2", ["agent-engineering"], creator="c-a"),
+        _page("c-b--v3", ["ai-agency-business"], creator="c-b"),
+    ]
+    tools_by_slug = {
+        "c-a--v1": ["n8n", "Cursor"],
+        "c-a--v2": ["n8n"],
+        "c-b--v3": ["Supabase"],
+    }
+
+    agg = compute_aggregates(
+        pages=pages, ingests=refs, tools_by_slug=tools_by_slug,
+        spend_usd=1.23, now=now, window_days=7,
+    )
+
+    assert agg.video_count == 3
+    assert agg.creator_count == 2
+    assert agg.tool_count == 3                            # n8n, Cursor, Supabase
+    assert agg.spend_usd == 1.23
+    assert agg.top_categories[0] == ("agent-engineering", 2)
+    assert ("claude-code-workflows", 1) in agg.top_categories
+    assert ("ai-agency-business", 1) in agg.top_categories
+    assert agg.top_tools[0] == ("n8n", 2)
+    assert len(agg.volume_per_day) == 7
+    # Ingest on 2026-05-27 lands in the last slot (newest = window_end day = now's date).
+    assert agg.volume_per_day[-1][1] == 2
+    # 2026-05-25 lands two slots earlier.
+    assert agg.volume_per_day[-3][1] == 1
