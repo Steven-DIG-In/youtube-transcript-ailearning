@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page
+from src.digest import IngestRef, SourcePage, select_recent_ingests, parse_source_page, detect_steps
 from src.write import write_source_page
 
 
@@ -113,3 +113,42 @@ def test_parse_source_page_round_trip(tmp_path):
         "Deploy preview on every commit catches breakage early",
     ]
     assert page.slug == "creator-nick-saraev--build-a-full-website-in-17-minutes-with-claude-code"
+
+
+def test_detect_steps_returns_ordered_items_for_numbered_list():
+    md = (
+        "1. First step that explains a thing.\n"
+        "2. Second step which expands on it.\n"
+        "3. Third step closing the loop.\n"
+    )
+    steps = detect_steps(md)
+    assert steps == [
+        "First step that explains a thing.",
+        "Second step which expands on it.",
+        "Third step closing the loop.",
+    ]
+
+
+def test_detect_steps_accepts_paren_form():
+    md = "1) First.\n2) Second.\n"
+    assert detect_steps(md) == ["First.", "Second."]
+
+
+def test_detect_steps_returns_none_for_prose():
+    md = "This video discusses approaches without a numbered procedure.\n"
+    assert detect_steps(md) is None
+
+
+def test_detect_steps_returns_none_for_single_item():
+    md = "1. Just one thing.\n"
+    assert detect_steps(md) is None
+
+
+def test_detect_steps_ignores_indented_sub_items():
+    md = (
+        "1. Top one.\n"
+        "    1. nested ignored\n"
+        "    2. nested ignored\n"
+        "2. Top two.\n"
+    )
+    assert detect_steps(md) == ["Top one.", "Top two."]

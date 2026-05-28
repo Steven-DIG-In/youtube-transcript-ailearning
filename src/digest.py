@@ -149,3 +149,21 @@ def parse_source_page(path: Path) -> SourcePage:
         instructions_md=sections.get("Instructions & How-To", ""),
         key_takeaways=_bullet_items(sections.get("Key Takeaways", "")),
     )
+
+
+_TOP_LEVEL_NUMBERED_RE = re.compile(r"^(\d+)[.)]\s+(.+?)$")
+
+
+def detect_steps(instructions_md: str) -> list[str] | None:
+    steps: list[str] = []
+    for raw in instructions_md.splitlines():
+        # Skip indented (sub-bullet / continuation) lines.
+        if raw.startswith((" ", "\t")):
+            continue
+        m = _TOP_LEVEL_NUMBERED_RE.match(raw.rstrip())
+        if not m:
+            continue
+        steps.append(m.group(2).strip())
+    if len(steps) < 2:
+        return None
+    return steps
