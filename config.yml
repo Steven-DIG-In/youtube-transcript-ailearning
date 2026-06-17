@@ -26,6 +26,13 @@ seed_categories:
   - codex-workflows
   - offer-design
   - design-systems
+  - local-and-self-hosted-ai
+  - content-and-video-generation
+  - ai-security-and-compliance
+  - voice-and-conversational-agents
+  - context-engineering
+  - sales-and-lead-generation
+  - model-and-industry-analysis
 
 ingest:
   max_videos_per_run: 2
