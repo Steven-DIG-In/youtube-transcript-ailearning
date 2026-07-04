@@ -159,6 +159,7 @@ from src.main import run_once
 def test_run_once_filters_watchlist_videos_below_min_duration(
     mocker, temp_vault, tmp_path
 ):
+    mocker.patch("src.main.push_vault", return_value=True)
     mocker.patch("src.main.self_update_ytdlp")
     mocker.patch(
         "src.main.list_new_videos_for_channel",
@@ -212,6 +213,7 @@ def test_run_once_filters_watchlist_videos_below_min_duration(
 def test_run_once_posts_slack_alert_when_ytdlp_self_update_fails(
     mocker, temp_vault, tmp_path
 ):
+    mocker.patch("src.main.push_vault", return_value=True)
     mocker.patch(
         "src.main.self_update_ytdlp",
         side_effect=RuntimeError("pypi unreachable"),
@@ -254,6 +256,7 @@ def test_run_once_posts_slack_alert_when_ytdlp_self_update_fails(
 
 
 def test_run_once_heartbeat_on_empty(mocker, temp_vault, tmp_path):
+    push_vault = mocker.patch("src.main.push_vault", return_value=True)
     mocker.patch("src.main.self_update_ytdlp")
     slack_client = mocker.patch("src.main.WebClient").return_value
     slack_client.auth_test.return_value = {"user_id": "U_BOT"}
@@ -283,10 +286,18 @@ def test_run_once_heartbeat_on_empty(mocker, temp_vault, tmp_path):
     top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
     assert "📼" in top_text
     assert "0 new" in top_text
+    # The vault push runs exactly once per run (and no 🚨 alert on success).
+    push_vault.assert_called_once()
+    posted_texts = [
+        c.kwargs.get("text", "")
+        for c in slack_client.chat_postMessage.call_args_list
+    ]
+    assert not any("🚨" in t for t in posted_texts)
 
 
 def test_run_once_writes_digest_and_includes_pointer(mocker, temp_vault, tmp_path):
     """run_once should call write_digest at the end and pass digest_pointer into the Slack summary."""
+    mocker.patch("src.main.push_vault", return_value=True)
     mocker.patch("src.main.self_update_ytdlp")
     slack_client = mocker.patch("src.main.WebClient").return_value
     slack_client.auth_test.return_value = {"user_id": "U_BOT"}
@@ -328,6 +339,7 @@ def test_run_once_writes_digest_and_includes_pointer(mocker, temp_vault, tmp_pat
 
 def test_run_once_digest_failure_does_not_break_slack_post(mocker, temp_vault, tmp_path):
     """If write_digest raises, run_once should still post the Slack summary with a ⚠ pointer line."""
+    mocker.patch("src.main.push_vault", return_value=True)
     mocker.patch("src.main.self_update_ytdlp")
     slack_client = mocker.patch("src.main.WebClient").return_value
     slack_client.auth_test.return_value = {"user_id": "U_BOT"}
@@ -359,4 +371,43 @@ def test_run_once_digest_failure_does_not_break_slack_post(mocker, temp_vault, t
     top_text = slack_client.chat_postMessage.call_args_list[0].kwargs["text"]
     assert "⚠ Digest generation failed" in top_text
     # State file still saved.
+    assert state_path.exists()
+
+
+def test_run_once_posts_slack_alert_when_vault_push_fails(mocker, temp_vault, tmp_path):
+    """If push_vault returns False, run_once posts the 🚨 alert and still saves state."""
+    mocker.patch("src.main.push_vault", return_value=False)
+    mocker.patch("src.main.self_update_ytdlp")
+    slack_client = mocker.patch("src.main.WebClient").return_value
+    slack_client.auth_test.return_value = {"user_id": "U_BOT"}
+    slack_client.chat_postMessage.return_value = {"ts": "1745.5"}
+    slack_client.conversations_history.return_value = {"messages": [], "has_more": False}
+    mocker.patch("src.main.Anthropic")
+
+    state_path = tmp_path / "state.json"
+    queue_path = tmp_path / "queue.txt"
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "watchlist: []\n"
+        "seed_categories: [optimising-ai]\n"
+        "ingest:\n"
+        "  max_videos_per_run: 10\n"
+        "  lookback_days: 14\n"
+        "  min_duration_seconds: 60\n"
+    )
+
+    run_once(
+        config_path=config_path, state_path=state_path, queue_path=queue_path,
+        vault=temp_vault, slack_channel_id="C1", anthropic_api_key="x",
+        slack_bot_token="y", today="2026-04-21", now_iso="2026-04-21T09:00:00Z",
+    )
+
+    posted_texts = [
+        c.kwargs.get("text", "")
+        for c in slack_client.chat_postMessage.call_args_list
+    ]
+    alert_texts = [t for t in posted_texts if "🚨" in t]
+    assert alert_texts, f"expected a 🚨 alert post, got: {posted_texts}"
+    assert "vault push failed" in alert_texts[0]
+    # State file still saved despite the failed push.
     assert state_path.exists()
