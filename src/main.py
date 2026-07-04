@@ -35,6 +35,7 @@ from src.write import (
     upsert_resources_index,
     write_source_page,
 )
+from vault_push import push_vault
 
 logger = logging.getLogger(__name__)
 
@@ -465,6 +466,16 @@ def run_once(
     if not ok:
         log_path = log_dir / f"{today}.json"
         _log_summary_for_retry(summary, log_path, state)
+
+    if not push_vault():
+        logger.error("vault push failed — AI Learnings changes are NOT reaching the Signal Layer")
+        try:
+            slack_client.chat_postMessage(
+                channel=slack_channel_id,
+                text="🚨 vault push failed — AI Learnings changes are NOT reaching the Signal Layer",
+            )
+        except Exception as post_exc:
+            logger.warning("failed to post vault-push alert: %s", post_exc)
 
     save_state(state_path, state)
 
