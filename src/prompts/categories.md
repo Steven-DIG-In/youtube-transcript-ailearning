@@ -43,9 +43,11 @@ These concepts were swept into seeds on 2026-06-16 — map them to the seed in p
 - voice-agent-systems / conversational-agents / telegram-agent-integration → `voice-and-conversational-agents`
 - sales-and-positioning / sales-frameworks / consulting-sales-ladder / agency-pricing-and-retainers / lead-generation / outreach-and-lead-generation / client-acquisition → `sales-and-lead-generation`
 - model-benchmarking / model-compare / model-release-analysis / ai-industry-analysis / ai-history → `model-and-industry-analysis`
-- multi-model-routing → `cost-optimisation`
+- multi-model-routing / model-routing-and-switching / model-compare → `cost-optimisation` (routing/switching for cost) or `model-and-industry-analysis` (comparing/benchmarking models)
 - cms-and-content-management / mobile-app-development → `building-websites`
 - research-automation / knowledge-extraction / knowledge-graphs → `memory-systems`
 - agentic-os / aios-architecture / goal-driven-agents → `agent-engineering`; parallel-agent-patterns → `multi-agent-systems`
 - cli-tooling → `claude-code-workflows`
+- ai-policy-and-governance / ai-regulation / ai-safety-debate → `future-trends` (societal debate) or `model-and-industry-analysis` (industry/regulatory analysis); do NOT create a governance seed
+- product-specific agent names (hermes-agent-mastery, hermes-agent, etc.) → `agent-engineering` — never make a seed for one product/framework
 - `workflow` is too generic — never use it; pick the specific seed instead
