@@ -11,3 +11,7 @@ tests/fixtures/_scratch/
 *.egg-info/
 .DS_Store
 .superpowers/
+
+# Local-only: pre-cleanup state snapshots and fetched transcripts
+state.json.bak-*
+transcripts/
