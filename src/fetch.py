@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -50,10 +51,29 @@ def extract_youtube_urls_from_text(text: str) -> list[str]:
 SELF_UPDATE_TIMEOUT_SECONDS = 120
 
 
+# The venv is uv-managed and has no pip, so `python -m pip` failed on every run
+# from 2026-08 (daily 🚨 alert, yt-dlp frozen at 2026.06.09 while YouTube kept
+# changing). launchd's PATH does not reach ~/.local/bin, hence the explicit
+# fallback. Upgrading via `uv pip` deliberately sits outside uv.lock -- this is
+# a runtime freshness bump, same intent as the old pip call, not a dependency
+# change; `uv sync` would put the pinned version back.
+_UV_FALLBACK = Path.home() / ".local" / "bin" / "uv"
+
+
+def _uv_binary() -> str | None:
+    found = shutil.which("uv")
+    if found:
+        return found
+    return str(_UV_FALLBACK) if _UV_FALLBACK.exists() else None
+
+
 def self_update_ytdlp() -> None:
+    uv = _uv_binary()
+    if uv is None:
+        raise RuntimeError("yt-dlp self-update failed: uv not found on PATH or ~/.local/bin")
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-U", "--quiet", "yt-dlp"],
+            [uv, "pip", "install", "-U", "--quiet", "--python", sys.executable, "yt-dlp"],
             capture_output=True,
             text=True,
             timeout=SELF_UPDATE_TIMEOUT_SECONDS,

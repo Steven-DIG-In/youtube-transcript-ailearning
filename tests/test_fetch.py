@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import sys
+
 import pytest
 
 from src.fetch import extract_video_id, extract_youtube_urls_from_text, self_update_ytdlp
@@ -45,16 +47,25 @@ def test_extract_urls_from_text_empty():
     assert extract_youtube_urls_from_text("no links here") == []
 
 
-def test_self_update_runs_pip_install(mocker):
+def test_self_update_runs_uv_pip_install_into_this_venv(mocker):
+    """The venv is uv-managed and ships no pip, so `python -m pip` failed every
+    day from 2026-08 (daily 🚨 + yt-dlp left stale). Upgrade via uv, pinned to
+    the interpreter that is actually running."""
     mock_run = mocker.patch("src.fetch.subprocess.run")
     mock_run.return_value.returncode = 0
+    mocker.patch("src.fetch._uv_binary", return_value="/opt/homebrew/bin/uv")
     self_update_ytdlp()
     mock_run.assert_called_once()
     args = mock_run.call_args.args[0]
-    assert "pip" in args
-    assert "install" in args
-    assert "-U" in args
+    assert args[:4] == ["/opt/homebrew/bin/uv", "pip", "install", "-U"]
     assert "yt-dlp" in args
+    assert "--python" in args and sys.executable in args
+
+
+def test_self_update_raises_when_uv_is_missing(mocker):
+    mocker.patch("src.fetch._uv_binary", return_value=None)
+    with pytest.raises(RuntimeError, match="uv not found"):
+        self_update_ytdlp()
 
 
 def test_self_update_raises_on_failure(mocker):
