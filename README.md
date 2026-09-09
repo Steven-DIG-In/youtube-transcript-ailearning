@@ -11,10 +11,10 @@ Plan: `docs/superpowers/plans/2026-04-21-youtube-transcript-ingestion.md`
 
 1. **Python + deps**
    ```bash
-   python3.13 -m venv .venv
-   source .venv/bin/activate
-   pip install -e ".[dev]"
+   uv sync --extra dev        # uv-managed venv (Python 3.12); there is NO pip in it
    ```
+   The daily run upgrades `yt-dlp` in place via `uv pip install -U` (outside `uv.lock`,
+   so a later `uv sync` reverts it until the next run bumps it again).
 
 2. **Slack app**
    - Create at https://api.slack.com/apps → "From scratch" → pick your workspace

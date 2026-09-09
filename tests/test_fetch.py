@@ -62,6 +62,23 @@ def test_self_update_runs_uv_pip_install_into_this_venv(mocker):
     assert "--python" in args and sys.executable in args
 
 
+def test_uv_binary_falls_back_to_local_bin_when_not_on_path(mocker):
+    """launchd's PATH does not reach ~/.local/bin, where uv actually lives, so
+    under the cron this fallback is the ONLY reason the update runs. Guard it."""
+    from src import fetch
+    mocker.patch("src.fetch.shutil.which", return_value=None)
+    mocker.patch.object(fetch.Path, "exists", return_value=True)
+    assert fetch._uv_binary() == str(fetch._UV_FALLBACK)
+    assert fetch._UV_FALLBACK.parts[-3:] == (".local", "bin", "uv")
+
+
+def test_uv_binary_is_none_when_neither_location_has_it(mocker):
+    from src import fetch
+    mocker.patch("src.fetch.shutil.which", return_value=None)
+    mocker.patch.object(fetch.Path, "exists", return_value=False)
+    assert fetch._uv_binary() is None
+
+
 def test_self_update_raises_when_uv_is_missing(mocker):
     mocker.patch("src.fetch._uv_binary", return_value=None)
     with pytest.raises(RuntimeError, match="uv not found"):
